@@ -12,6 +12,7 @@ py7zr = "^0.20.4"
 xmltodict = "^0.13.0"
 jsonlines = "^3.1.0"
 zstandard = "^0.20.0"
+cuid = "^0.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"
