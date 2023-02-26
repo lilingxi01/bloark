@@ -82,6 +82,12 @@ class TemporalWikiBlocks:
             results = parse_xml(path, processor)
             all_results.extend(results)
 
+        # Divide the results into blocks.
+        blocks = divide_into_blocks(original_list=all_results, count_per_block=50)
+
+        # Save the results to a JSONL file.
+        store_to_jsonl(blocks=blocks, output_dir=output_dir)
+
         # Clean up the temporary directory.
         shutil.rmtree(compression_temp_dir)
         shutil.rmtree(decompression_temp_dir)
@@ -116,13 +122,13 @@ def xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: 
     tag_name = path[-1][0]
     item_type = type(item)
 
+    # If the item is a page, we don't need to process it.
     if tag_name != 'page':
         return True
 
-    if item_type is dict:
-        print('item:', item.keys())
-    else:
-        print('item:', item.strip())
+    # If the item is not a dictionary, it means that the item is a leaf node and we don't expect it to be a block.
+    if item_type is not dict:
+        return True
 
     processed_item = processor.parse(tag=tag_name, meta={}, tree=item)
     results.append(processed_item)
@@ -146,3 +152,13 @@ def parse_xml(path: str, processor: BlockInteriorProcessor) -> List[dict]:
 
     # Return the results as a list of JSON objects (so that they can be thrown into a JSONL file).
     return results
+
+
+def divide_into_blocks(original_list: List[dict], count_per_block: int = 50) -> List[List[dict]]:
+    # TODO: Implement this method.
+    return []
+
+
+def store_to_jsonl(blocks: List[List[dict]], output_dir: str):
+    # TODO: Implement this method.
+    pass

@@ -24,4 +24,7 @@ class DefaultBIP(BlockInteriorProcessor):
     """
     def parse(self, tag: str, meta: Dict[str, str], tree: Dict[str, Any]) -> Dict[str, Any]:
         # TODO: Implement the default BIP.
+
+        print(tree.keys())
+
         return tree
