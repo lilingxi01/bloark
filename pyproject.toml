@@ -3,7 +3,7 @@ name = "twb"
 version = "0.0.1"
 description = ""
 authors = ["Lingxi Li <lilingxi01@gmail.com>"]
-license = "MIT"
+license = "GNU GPL"
 readme = "README.md"
 
 [tool.poetry.dependencies]
