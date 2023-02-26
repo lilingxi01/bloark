@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Union
 
 
 class BlockInteriorProcessor(ABC):
@@ -14,7 +14,7 @@ class BlockInteriorProcessor(ABC):
         self.read_depth = read_depth
 
     @abstractmethod
-    def parse(self, tag: str, meta: Dict[str, str], tree: Dict[str, Any]) -> Dict[str, Any]:
+    def parse(self, tag: str, meta: Dict[str, str], tree: Dict[str, Any]) -> Union[Dict[str, Any], None]:
         pass
 
 
@@ -22,9 +22,5 @@ class DefaultBIP(BlockInteriorProcessor):
     """
     Default BIP.
     """
-    def parse(self, tag: str, meta: Dict[str, str], tree: Dict[str, Any]) -> Dict[str, Any]:
-        # TODO: Implement the default BIP.
-
-        print(tree.keys())
-
+    def parse(self, tag: str, meta: Dict[str, str], tree: Dict[str, Any]) -> Union[Dict[str, Any], None]:
         return tree

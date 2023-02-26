@@ -156,7 +156,10 @@ def xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: 
         return True
 
     processed_item = processor.parse(tag=tag_name, meta={}, tree=item)
-    results.append(processed_item)
+
+    # If the item is not None, it means that the item is a block and we should append it to the results.
+    if processed_item is not None:
+        results.append(processed_item)
 
     return True
 
