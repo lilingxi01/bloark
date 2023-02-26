@@ -5,6 +5,7 @@ from typing import Tuple, List
 import xmltodict
 import py7zr
 from multiprocessing import Pool
+import jsonlines
 
 from .utils import get_file_list, clean_existed_files
 from .bip import BlockInteriorProcessor, DefaultBIP
@@ -86,7 +87,11 @@ class TemporalWikiBlocks:
         blocks = divide_into_blocks(original_list=all_results, count_per_block=50)
 
         # Save the results to a JSONL file.
-        store_to_jsonl(blocks=blocks, output_dir=output_dir)
+        store_to_jsonl(blocks=blocks, compression_temp_dir=compression_temp_dir)
+
+        # List all the files in the compression directory.
+        compressed_file_list = get_file_list(compression_temp_dir)
+        print(compressed_file_list)
 
         # Clean up the temporary directory.
         shutil.rmtree(compression_temp_dir)
@@ -117,8 +122,14 @@ def decompress_file(config: Tuple[str, str]):
 
 
 def xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: list):
-    # TODO: Implement the processor here.
-
+    """
+    The callback function for the XML parser.
+    :param path: the path of the current item
+    :param item: children dictionary
+    :param processor: the interior processor for blocks
+    :param results: the list of results (to be appended onto)
+    :return: True if the parsing should continue, False otherwise
+    """
     tag_name = path[-1][0]
     item_type = type(item)
 
@@ -137,6 +148,12 @@ def xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: 
 
 
 def parse_xml(path: str, processor: BlockInteriorProcessor) -> List[dict]:
+    """
+    Parse the XML file into a list of JSON objects.
+    :param path: the path of the XML file
+    :param processor: the interior processor for blocks
+    :return: the list of parsed results
+    """
     results = []
 
     with open(path, 'rb') as xml_file:
@@ -155,10 +172,32 @@ def parse_xml(path: str, processor: BlockInteriorProcessor) -> List[dict]:
 
 
 def divide_into_blocks(original_list: List[dict], count_per_block: int = 50) -> List[List[dict]]:
-    # TODO: Implement this method.
-    return []
+    """
+    Divide the original list into blocks.
+    :param original_list: the original list
+    :param count_per_block: the number of items per block
+    :return: the list of blocks
+    """
+    # Divide original_list into blocks every count_per_block items.
+    return [original_list[i:i + count_per_block] for i in range(0, len(original_list), count_per_block)]
 
 
-def store_to_jsonl(blocks: List[List[dict]], output_dir: str):
-    # TODO: Implement this method.
-    pass
+def store_to_jsonl(blocks: List[List[dict]], compression_temp_dir: str) -> List[str]:
+    """
+    Store the blocks to a JSONL file.
+    :param blocks: the blocks to store
+    :param compression_temp_dir: the directory to store the JSONL files
+    :return: the list of JSONL file paths
+    """
+    jsonl_files = []  # Store all the JSONL file paths for future compression.
+
+    block_range = range(len(blocks))
+    num_digits = len(str(len(blocks)))
+
+    for i in block_range:
+        curr_path = os.path.join(compression_temp_dir, f'block_{str(i).zfill(num_digits)}.jsonl')
+        with jsonlines.open(curr_path, 'w') as writer:
+            writer.write_all(blocks[i])
+        jsonl_files.append(curr_path)
+
+    return jsonl_files
