@@ -21,7 +21,6 @@ pip install twb
 - **Flexible**: The package is designed to be flexible and can be easily extended to support other types of blocks.
 - **Composable**: The package is designed to be composable and can be easily combined with other packages to build other datasets.
 
-## Roadmap
+## Specification
 
-- [ ] Finish building the default processor.
-- [ ] Finish integrating the default processor with the package.
+- Default compression method: ZStandard.

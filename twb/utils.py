@@ -1,5 +1,6 @@
 import os
 from typing import List
+import zstandard as zstd
 
 
 def get_file_list(input_path: str) -> List[str]:
@@ -49,13 +50,14 @@ def get_decompress_output_path(input_path: str, output_dir: str):
     return os.path.join(output_dir, decompressed_file_name)
 
 
-def clean_existed_files(file_list: List[str], output_dir: str):
+def compress_zstd(input_path: str, output_path: str):
     """
-    Clean the existed files in the output directory.
-    :param file_list: the list of files
-    :param output_dir: the output directory
+    Compress the blocks into a Zstandard file.
+    :param input_path: the input path
+    :param output_path: the output path
     """
-    for file in file_list:
-        output_path = get_decompress_output_path(file, output_dir)
-        if os.path.exists(output_path):
-            os.remove(output_path)
+
+    # Compress the blocks.
+    compressor = zstd.ZstdCompressor()
+    with open(input_path, "rb") as ifh, open(output_path, "wb") as ofh:
+        compressor.copy_stream(ifh, ofh)

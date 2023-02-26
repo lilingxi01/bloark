@@ -7,7 +7,7 @@ import py7zr
 from multiprocessing import Pool
 import jsonlines
 
-from .utils import get_file_list, clean_existed_files
+from .utils import get_file_list, compress_zstd
 from .bip import BlockInteriorProcessor, DefaultBIP
 
 
@@ -45,12 +45,16 @@ class TemporalWikiBlocks:
     def build(self,
               output_dir: str,
               processor: BlockInteriorProcessor = DefaultBIP(),
-              num_proc: int = 1):
+              limit: int = 0,
+              num_proc: int = 1,
+              compress: bool = True):
         """
         Build the blocks.
         :param processor: the interior processor for blocks
         :param output_dir: the output directory
+        :param limit: the number of blocks to be processed at most (WIP)
         :param num_proc: the number of processes
+        :param compress: whether to compress the blocks
         :raise Warning: if there is no file to process
         """
         zip_file_list = self.files
@@ -86,6 +90,9 @@ class TemporalWikiBlocks:
         # Get all files in the decompression directory.
         all_results = []
         decompressed_file_list = get_file_list(decompression_temp_dir)
+
+        # Parse the XML files linearly.
+        # TODO: Parallelize this part.
         for path in decompressed_file_list:
             results = parse_xml(path, processor)
             all_results.extend(results)
@@ -93,17 +100,21 @@ class TemporalWikiBlocks:
         # Divide the results into blocks.
         blocks = divide_into_blocks(original_list=all_results, count_per_block=50)
 
-        # Save the results to a JSONL file.
-        jsonl_files = store_to_jsonl(blocks=blocks, compression_temp_dir=compression_temp_dir)
+        if compress:
+            # Save the results to a JSONL file.
+            jsonl_files = store_to_jsonl(blocks=blocks, output_dir=compression_temp_dir)
 
-        # Compress the files in parallel.
-        print('[Build] Start compressing blocks.')
-        start_time = time.time()
-        with Pool(processes=num_proc) as pool:
-            pool.map(compress_file, [(jsonl_file, output_dir) for jsonl_file in jsonl_files])
-        end_time = time.time()
-        execution_duration = end_time - start_time
-        print(f"[Build] Finish compressing blocks. (Took {execution_duration:.2f} seconds in total)")
+            # Compress the files in parallel.
+            print('[Build] Start compressing blocks.')
+            start_time = time.time()
+            with Pool(processes=num_proc) as pool:
+                pool.map(compress_file, [(jsonl_file, output_dir) for jsonl_file in jsonl_files])
+            end_time = time.time()
+            execution_duration = end_time - start_time
+            print(f"[Build] Finish compressing blocks. (Took {execution_duration:.2f} seconds in total)")
+        else:
+            # Save the results to a JSONL file.
+            store_to_jsonl(blocks=blocks, output_dir=output_dir)
 
         # Clean up the temporary directory.
         shutil.rmtree(compression_temp_dir)
@@ -123,7 +134,7 @@ def decompress_file(config: Tuple[str, str]):
         print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
         return
 
-    print('[Build] >>> Decompressing:', path, output_path)
+    print('[Build] >>> Decompressing:', path)
 
     # Decompress the file.
     with py7zr.SevenZipFile(path, mode='r') as z:
@@ -132,7 +143,7 @@ def decompress_file(config: Tuple[str, str]):
         end_time = time.time()
 
         execution_duration = end_time - start_time
-        print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
+        print(f"[Build] >>> Decompression done: {output_path} -- {execution_duration:.2f} seconds")
 
 
 def xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: list):
@@ -199,11 +210,11 @@ def divide_into_blocks(original_list: List[dict], count_per_block: int = 50) -> 
     return [original_list[i:i + count_per_block] for i in range(0, len(original_list), count_per_block)]
 
 
-def store_to_jsonl(blocks: List[List[dict]], compression_temp_dir: str) -> List[str]:
+def store_to_jsonl(blocks: List[List[dict]], output_dir: str) -> List[str]:
     """
     Store the blocks to a JSONL file.
     :param blocks: the blocks to store
-    :param compression_temp_dir: the directory to store the JSONL files
+    :param output_dir: the directory to store the JSONL files
     :return: the list of JSONL file paths
     """
     jsonl_files = []  # Store all the JSONL file paths for future compression.
@@ -212,12 +223,16 @@ def store_to_jsonl(blocks: List[List[dict]], compression_temp_dir: str) -> List[
     num_digits = len(str(len(blocks)))
 
     for i in block_range:
-        curr_path = os.path.join(compression_temp_dir, f'block_{str(i).zfill(num_digits)}.jsonl')
+        curr_path = os.path.join(output_dir, f'block_{str(i).zfill(num_digits)}.jsonl')
         with jsonlines.open(curr_path, 'w') as writer:
             writer.write_all(blocks[i])
         jsonl_files.append(curr_path)
 
     return jsonl_files
+
+
+# The extension of the compressed file.
+compress_extension = '.zst'
 
 
 def compress_file(config: Tuple[str, str]):
@@ -233,21 +248,18 @@ def compress_file(config: Tuple[str, str]):
         print(f'[Build] >>> Skipped because the file is not a JSONL file. ({path})')
         return
 
-    output_path = os.path.join(output_dir, os.path.basename(path) + '.7z')
+    output_path = os.path.join(output_dir, os.path.basename(path) + compress_extension)
 
-    print('[Build] >>> Compressing:', path, output_path)
+    print('[Build] >>> Compressing:', path)
 
-    # TODO: Might want to use ZStandard?
-
-    # Compress the file.
-    with py7zr.SevenZipFile(output_path, mode='w') as z:
-        start_time = time.time()
-        z.writeall(path, 'jsonl')
-        end_time = time.time()
-
-        execution_duration = end_time - start_time
+    # Compress the file using Zstandard.
+    start_time = time.time()
+    compress_zstd(input_path=path, output_path=output_path)
+    end_time = time.time()
+    execution_duration = end_time - start_time
 
     file_size = os.path.getsize(path)  # Get current file size.
     compressed_file_size = os.path.getsize(output_path)  # Get compressed file size.
     compression_ratio = compressed_file_size / file_size  # Calculate compression ratio.
-    print(f"[Build] >>> Compression done: {path} -- {execution_duration:.2f} seconds -- {compression_ratio:.2f}x")
+    print(f"[Build] >>> Compression done: {output_path} -- {execution_duration:.2f} seconds")
+    print(f"[Build] >>> >>> Compression ratio: ({compressed_file_size}/{file_size}) = {compression_ratio:.2f}x")
