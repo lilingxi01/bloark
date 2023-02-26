@@ -1,14 +1,16 @@
 import os
 import shutil
 import time
-from typing import Tuple, List
+from typing import List, Union
 import xmltodict
 import py7zr
-from multiprocessing import Pool
 import jsonlines
 
-from .utils import get_file_list, compress_zstd
+from .utils import get_file_list, compress_zstd, get_estimated_size
 from .bip import BlockInteriorProcessor, DefaultBIP
+from .parallelization import RDSProcessManager, RDSProcessController
+
+import cuid
 
 
 class TemporalWikiBlocks:
@@ -45,16 +47,16 @@ class TemporalWikiBlocks:
     def build(self,
               output_dir: str,
               processor: BlockInteriorProcessor = DefaultBIP(),
-              limit: int = 0,
-              num_proc: int = 1,
+              total_space: Union[int, None] = None,
+              num_proc: Union[int, None] = None,
               compress: bool = True):
         """
         Build the blocks.
-        :param processor: the interior processor for blocks
-        :param output_dir: the output directory
-        :param limit: the number of blocks to be processed at most (WIP)
-        :param num_proc: the number of processes
-        :param compress: whether to compress the blocks
+        :param processor: the interior processor for blocks (default: DefaultBIP)
+        :param output_dir: the output directory for the blocks (will be created if not exists)
+        :param total_space: the total space for the temporary files (default: all available space on the disk)
+        :param num_proc: the number of processes (default: number of CPUs)
+        :param compress: whether to compress the blocks (default: True)
         :raise Warning: if there is no file to process
         """
         zip_file_list = self.files
@@ -80,55 +82,40 @@ class TemporalWikiBlocks:
 
         # Decompress the files in parallel.
         print('[Build] Start decompressing files.')
+
+        process_manager_context = {
+            'processor': processor,
+            'compress': compress,
+        }
+
+        # Determine the total space for the temporary files.
+        total_available_space = shutil.disk_usage(output_dir).free if total_space is None else total_space
+
+        # Display the total available space in GB.
+        total_available_space_gb = total_available_space / 1024 / 1024 / 1024
+        print('[Build] RDS space limitation:', round(total_available_space_gb, 2), 'GB.')
+
+        process_manager = RDSProcessManager(
+            executable=file_processor,
+            total_space=total_available_space,
+            num_proc=num_proc,
+            context=process_manager_context
+        )
+        for path in zip_file_list:
+            process_manager.register(path, output_dir, get_estimated_size(path))
+
         start_time = time.time()
-        with Pool(processes=num_proc) as pool:
-            pool.map(decompress_file, [(path, decompression_temp_dir) for path in zip_file_list])
+        process_manager.start()
         end_time = time.time()
         execution_duration = end_time - start_time
         print(f"[Build] Finish decompressing files. (Took {execution_duration:.2f} seconds in total)")
-
-        # Get all files in the decompression directory.
-        all_results = []
-        decompressed_file_list = get_file_list(decompression_temp_dir)
-
-        # Parse the XML files linearly.
-        # TODO: Parallelize this part.
-        for path in decompressed_file_list:
-            results = parse_xml(path, processor)
-            all_results.extend(results)
-
-        # Divide the results into blocks.
-        blocks = divide_into_blocks(original_list=all_results, count_per_block=50)
-
-        if compress:
-            # Save the results to a JSONL file.
-            jsonl_files = store_to_jsonl(blocks=blocks, output_dir=compression_temp_dir)
-
-            # Compress the files in parallel.
-            print('[Build] Start compressing blocks.')
-            start_time = time.time()
-            with Pool(processes=num_proc) as pool:
-                pool.map(compress_file, [(jsonl_file, output_dir) for jsonl_file in jsonl_files])
-            end_time = time.time()
-            execution_duration = end_time - start_time
-            print(f"[Build] Finish compressing blocks. (Took {execution_duration:.2f} seconds in total)")
-        else:
-            # Save the results to a JSONL file.
-            store_to_jsonl(blocks=blocks, output_dir=output_dir)
 
         # Clean up the temporary directory.
         shutil.rmtree(compression_temp_dir)
         shutil.rmtree(decompression_temp_dir)
 
 
-def decompress_file(config: Tuple[str, str]):
-    """
-    Decompress a file.
-    :param config: the configuration of the decompression in the form of (input_path, output_path)
-    :return:
-    """
-    path, output_path = config
-
+def file_processor(path: str, output_dir: str, controller: RDSProcessController, context: dict):
     # If the file is not a 7z file, skip it.
     if not path.endswith('.7z'):
         print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
@@ -136,14 +123,54 @@ def decompress_file(config: Tuple[str, str]):
 
     print('[Build] >>> Decompressing:', path)
 
+    # Get the block interior processor from the running context.
+    block_interior_processor = context['processor'] if 'processor' in context else DefaultBIP()
+    should_compress = context['compress'] if 'compress' in context else True
+
+    # Generate a UUID.
+    temp_id = cuid.cuid()
+
+    compression_temp_dir = os.path.join(output_dir, 'compression_temp', temp_id)
+    os.makedirs(compression_temp_dir)
+
+    decompression_temp_dir = os.path.join(output_dir, 'decompression_temp', temp_id)
+    os.makedirs(decompression_temp_dir)
+
     # Decompress the file.
     with py7zr.SevenZipFile(path, mode='r') as z:
         start_time = time.time()
-        z.extractall(path=output_path)
+        z.extractall(path=decompression_temp_dir)
         end_time = time.time()
 
         execution_duration = end_time - start_time
-        print(f"[Build] >>> Decompression done: {output_path} -- {execution_duration:.2f} seconds")
+        print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
+
+    decompressed_files = get_file_list(decompression_temp_dir)
+    all_results = []
+    for path in decompressed_files:
+        results = parse_xml(path=path, processor=block_interior_processor)
+        all_results.extend(results)
+
+    # Divide the results into blocks.
+    blocks = divide_into_blocks(original_list=all_results, count_per_block=50)
+
+    if should_compress:
+        # Store the results to JSONL files.
+        json_files = store_to_jsonl(blocks=blocks, output_dir=compression_temp_dir, controller=controller)
+
+        # Compress the files.
+        for json_file in json_files:
+            compress_file(path=json_file, output_dir=output_dir)
+    else:
+        # Store the results to JSONL files.
+        store_to_jsonl(blocks=blocks, output_dir=output_dir, controller=controller)
+
+    # Delete temporary files.
+    shutil.rmtree(compression_temp_dir)
+    shutil.rmtree(decompression_temp_dir)
+
+    # Release the RDS process controller for freeing up the disk space constraint.
+    controller.release()
 
 
 def xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: list):
@@ -210,20 +237,20 @@ def divide_into_blocks(original_list: List[dict], count_per_block: int = 50) -> 
     return [original_list[i:i + count_per_block] for i in range(0, len(original_list), count_per_block)]
 
 
-def store_to_jsonl(blocks: List[List[dict]], output_dir: str) -> List[str]:
+def store_to_jsonl(blocks: List[List[dict]], output_dir: str, controller: RDSProcessController) -> List[str]:
     """
     Store the blocks to a JSONL file.
     :param blocks: the blocks to store
     :param output_dir: the directory to store the JSONL files
+    :param controller: the controller for the process
     :return: the list of JSONL file paths
     """
+    curr_index = str(controller.declare_index()).zfill(5)
+
     jsonl_files = []  # Store all the JSONL file paths for future compression.
 
-    block_range = range(len(blocks))
-    num_digits = len(str(len(blocks)))
-
-    for i in block_range:
-        curr_path = os.path.join(output_dir, f'block_{str(i).zfill(num_digits)}.jsonl')
+    for i in range(len(blocks)):
+        curr_path = os.path.join(output_dir, f'block_{curr_index}.jsonl')
         with jsonlines.open(curr_path, 'w') as writer:
             writer.write_all(blocks[i])
         jsonl_files.append(curr_path)
@@ -235,14 +262,13 @@ def store_to_jsonl(blocks: List[List[dict]], output_dir: str) -> List[str]:
 compress_extension = '.zst'
 
 
-def compress_file(config: Tuple[str, str]):
+def compress_file(path: str, output_dir: str):
     """
     Compress a file.
-    :param config: the configuration of the compression in the form of (input_path, output_path)
+    :param path: the path of the file to compress
+    :param output_dir: the directory to store the compressed file
     :return:
     """
-    path, output_dir = config
-
     # If the file is not a JSONL file, skip it.
     if not path.endswith('.jsonl'):
         print(f'[Build] >>> Skipped because the file is not a JSONL file. ({path})')

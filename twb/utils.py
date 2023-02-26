@@ -1,6 +1,7 @@
 import os
 from typing import List
 import zstandard as zstd
+import py7zr
 
 
 def get_file_list(input_path: str) -> List[str]:
@@ -61,3 +62,12 @@ def compress_zstd(input_path: str, output_path: str):
     compressor = zstd.ZstdCompressor()
     with open(input_path, "rb") as ifh, open(output_path, "wb") as ofh:
         compressor.copy_stream(ifh, ofh)
+
+
+def get_estimated_size(path: str) -> int:
+    if path.endswith('.7z'):
+        with py7zr.SevenZipFile(path, 'r') as z:
+            space = z.archiveinfo().uncompressed
+        return space * 2
+    else:
+        return os.path.getsize(path) * 2
