@@ -20,4 +20,4 @@ def test_build():
 
     twb = TemporalWikiBlocks()
     twb.preload(mock_data_dir)
-    twb.build('./test/output')
+    twb.build('./test/output', num_proc=5)
