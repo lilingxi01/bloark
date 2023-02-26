@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "twb"
+version = "0.0.1"
+description = ""
+authors = ["Lingxi Li <lilingxi01@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+py7zr = "^0.20.4"
+xmltodict = "^0.13.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.2.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

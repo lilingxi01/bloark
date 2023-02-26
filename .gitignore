@@ -1,0 +1,20 @@
+.DS_Store
+
+.nova/
+.idea/
+.vscode/
+.fleet/
+
+__pycache__/
+.pytest_cache/
+
+dist/
+test_output/
+error_logs/
+twikidata-output.json
+
+.env
+.env.*
+
+# Local testing data.
+test/sample_data/temp/
