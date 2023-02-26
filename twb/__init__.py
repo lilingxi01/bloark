@@ -13,7 +13,16 @@ from .bip import BlockInteriorProcessor, DefaultBIP
 
 class TemporalWikiBlocks:
     """
-    A class to make the blocks of a TemporalWiki page.
+    The core class to generate the blocks from Wikipedia Edit History chunk.
+
+    Basic usage:
+
+        twb = TemporalWikiBlocks()  # Create an instance.
+        twb.preload('./test/sample_data/minimal_sample.xml')  # Preload the files to be processed.
+        twb.build('./test/output')  # Build the blocks.
+
+    You must preload the files to be processed before building the blocks.
+    Preload function accepts a path to a file or a directory, and can be called multiple times (for multiple files).
     """
 
     def __init__(self):
@@ -36,7 +45,7 @@ class TemporalWikiBlocks:
     def build(self,
               output_dir: str,
               processor: BlockInteriorProcessor = DefaultBIP(),
-              num_proc: int = 5):
+              num_proc: int = 1):
         """
         Build the blocks.
         :param processor: the interior processor for blocks
@@ -50,34 +59,32 @@ class TemporalWikiBlocks:
         if len(zip_file_list) == 0:
             raise Warning('There is no file to process.')
 
-        # If the override flag is set, clean the existed files before processing.
-        clean_existed_files(file_list=zip_file_list, output_dir=output_dir)
+        # If output dir exists, remove it first.
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+
+        # Create the output directory.
+        os.makedirs(output_dir)
 
         # Create the temporary directory for compression.
         compression_temp_dir = os.path.join(output_dir, 'compression_temp')
-        if not os.path.exists(compression_temp_dir):
-            os.makedirs(compression_temp_dir)
+        os.makedirs(compression_temp_dir)
 
         # Create the temporary directory for decompression.
         decompression_temp_dir = os.path.join(output_dir, 'decompression_temp')
-        if not os.path.exists(decompression_temp_dir):
-            os.makedirs(decompression_temp_dir)
+        os.makedirs(decompression_temp_dir)
 
-        # Decompress the files in parallel if the number of processes is greater than 1.
+        # Decompress the files in parallel.
         print('[Build] Start decompressing files.')
-
         start_time = time.time()
-
         with Pool(processes=num_proc) as pool:
             pool.map(decompress_file, [(path, decompression_temp_dir) for path in zip_file_list])
-
         end_time = time.time()
         execution_duration = end_time - start_time
         print(f"[Build] Finish decompressing files. (Took {execution_duration:.2f} seconds in total)")
 
-        all_results = []
-
         # Get all files in the decompression directory.
+        all_results = []
         decompressed_file_list = get_file_list(decompression_temp_dir)
         for path in decompressed_file_list:
             results = parse_xml(path, processor)
@@ -87,11 +94,16 @@ class TemporalWikiBlocks:
         blocks = divide_into_blocks(original_list=all_results, count_per_block=50)
 
         # Save the results to a JSONL file.
-        store_to_jsonl(blocks=blocks, compression_temp_dir=compression_temp_dir)
+        jsonl_files = store_to_jsonl(blocks=blocks, compression_temp_dir=compression_temp_dir)
 
-        # List all the files in the compression directory.
-        compressed_file_list = get_file_list(compression_temp_dir)
-        print(compressed_file_list)
+        # Compress the files in parallel.
+        print('[Build] Start compressing blocks.')
+        start_time = time.time()
+        with Pool(processes=num_proc) as pool:
+            pool.map(compress_file, [(jsonl_file, output_dir) for jsonl_file in jsonl_files])
+        end_time = time.time()
+        execution_duration = end_time - start_time
+        print(f"[Build] Finish compressing blocks. (Took {execution_duration:.2f} seconds in total)")
 
         # Clean up the temporary directory.
         shutil.rmtree(compression_temp_dir)
@@ -106,12 +118,14 @@ def decompress_file(config: Tuple[str, str]):
     """
     path, output_path = config
 
-    print('[Build] >>> Decompressing:', path, output_path)
-
+    # If the file is not a 7z file, skip it.
     if not path.endswith('.7z'):
         print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
         return
 
+    print('[Build] >>> Decompressing:', path, output_path)
+
+    # Decompress the file.
     with py7zr.SevenZipFile(path, mode='r') as z:
         start_time = time.time()
         z.extractall(path=output_path)
@@ -201,3 +215,36 @@ def store_to_jsonl(blocks: List[List[dict]], compression_temp_dir: str) -> List[
         jsonl_files.append(curr_path)
 
     return jsonl_files
+
+
+def compress_file(config: Tuple[str, str]):
+    """
+    Compress a file.
+    :param config: the configuration of the compression in the form of (input_path, output_path)
+    :return:
+    """
+    path, output_dir = config
+
+    # If the file is not a JSONL file, skip it.
+    if not path.endswith('.jsonl'):
+        print(f'[Build] >>> Skipped because the file is not a JSONL file. ({path})')
+        return
+
+    output_path = os.path.join(output_dir, os.path.basename(path) + '.7z')
+
+    print('[Build] >>> Compressing:', path, output_path)
+
+    # TODO: Might want to use ZStandard?
+
+    # Compress the file.
+    with py7zr.SevenZipFile(output_path, mode='w') as z:
+        start_time = time.time()
+        z.writeall(path, 'jsonl')
+        end_time = time.time()
+
+        execution_duration = end_time - start_time
+
+    file_size = os.path.getsize(path)  # Get current file size.
+    compressed_file_size = os.path.getsize(output_path)  # Get compressed file size.
+    compression_ratio = compressed_file_size / file_size  # Calculate compression ratio.
+    print(f"[Build] >>> Compression done: {path} -- {execution_duration:.2f} seconds -- {compression_ratio:.2f}x")
