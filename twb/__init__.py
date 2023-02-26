@@ -1,7 +1,7 @@
 import os
 import shutil
 import time
-from typing import Tuple
+from typing import Tuple, List
 import xmltodict
 import py7zr
 from multiprocessing import Pool
@@ -74,6 +74,14 @@ class TemporalWikiBlocks:
         execution_duration = end_time - start_time
         print(f"[Build] Finish decompressing files. (Took {execution_duration:.2f} seconds in total)")
 
+        all_results = []
+
+        # Get all files in the decompression directory.
+        decompressed_file_list = get_file_list(decompression_temp_dir)
+        for path in decompressed_file_list:
+            results = parse_xml(path, processor)
+            all_results.extend(results)
+
         # Clean up the temporary directory.
         shutil.rmtree(compression_temp_dir)
         shutil.rmtree(decompression_temp_dir)
@@ -105,26 +113,36 @@ def decompress_file(config: Tuple[str, str]):
 def xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: list):
     # TODO: Implement the processor here.
 
-    print('path:', path[-1])
+    tag_name = path[-1][0]
+    item_type = type(item)
 
-    if isinstance(item, dict):
+    if tag_name != 'page':
+        return True
+
+    if item_type is dict:
         print('item:', item.keys())
-        if 'revision' in item:
-            print(len(item['revision']))
     else:
         print('item:', item.strip())
 
-    pass
+    processed_item = processor.parse(tag=tag_name, meta={}, tree=item)
+    results.append(processed_item)
+
+    return True
 
 
-def parse_xml(path: str, processor: BlockInteriorProcessor):
+def parse_xml(path: str, processor: BlockInteriorProcessor) -> List[dict]:
     results = []
 
     with open(path, 'rb') as xml_file:
-        xmltodict.parse(
-            xml_file,
-            item_depth=processor.read_depth,
-            item_callback=lambda x, y: xml_parser_callback(x, y, processor, results)
-        )
+        try:
+            xmltodict.parse(
+                xml_file,
+                item_depth=processor.read_depth,
+                item_callback=lambda x, y: xml_parser_callback(x, y, processor, results)
+            )
+        except xmltodict.ParsingInterrupted as e:
+            # We don't need to handle this exception because this should be intended.
+            pass
 
-    # TODO: Return the results as a list of JSON objects (so that they can be thrown into a JSONL file).
+    # Return the results as a list of JSON objects (so that they can be thrown into a JSONL file).
+    return results
