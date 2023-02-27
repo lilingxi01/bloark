@@ -2,6 +2,9 @@ from typing import Callable
 
 
 class BlocksReader:
+    """
+    (WIP) Read the blocks (TWB) from all files in the path.
+    """
     def __init__(self, path: str):
         """
         :param path: the path of the blocks
@@ -14,5 +17,4 @@ class BlocksReader:
         :param func: the function to be mapped
         """
         # TODO: Implement this method.
-        for block in self:
-            func(block)
+        pass
