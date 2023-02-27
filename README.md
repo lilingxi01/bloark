@@ -11,7 +11,7 @@ The package works by dividing the Wikipedia edit history into temporal blocks, w
 The package is available on PyPI and can be installed using pip:
 
 ```bash
-pip install twb
+pip install twb-project
 ```
 
 ## Benefits
