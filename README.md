@@ -1,4 +1,4 @@
-<img src="./.github/cover.png" alt="TWB" />
+<img src="https://github.com/lilingxi01/twb-project/blob/main/.github/cover.png" alt="TWB" />
 
 # Temporal Wikipedia Blocks (TWB)
 

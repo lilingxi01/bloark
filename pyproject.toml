@@ -1,10 +1,13 @@
 [tool.poetry]
-name = "twb"
+name = "twb-project"
 version = "0.0.1"
 description = ""
 authors = ["Lingxi Li <lilingxi01@gmail.com>"]
 license = "GNU GPL"
 readme = "README.md"
+packages = [
+    { include = "twb" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
