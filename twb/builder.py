@@ -108,7 +108,7 @@ class Builder:
         process_manager.start()
         end_time = time.time()
         execution_duration = end_time - start_time
-        print(f"[Build] Finish decompressing files. (Took {execution_duration:.2f} seconds in total)")
+        print(f"[Build] All done. (Took {execution_duration:.2f} seconds in total)")
 
         # Clean up the temporary directory.
         shutil.rmtree(compression_temp_dir)
