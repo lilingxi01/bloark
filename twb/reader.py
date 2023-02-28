@@ -1,5 +1,6 @@
 import os
 from typing import Callable, Union
+import time
 
 from .parallelization import RDSProcessController, RDSProcessManager
 from .utils import get_file_list, decompress_zstd, get_estimated_size, compute_total_available_space
@@ -63,7 +64,12 @@ class Reader:
         )
         for file in self.files:
             process_manager.register(path=file, output_dir=output_dir, space=get_estimated_size(file))
+
+        start_time = time.time()
         process_manager.start()
+        end_time = time.time()
+        execution_duration = end_time - start_time
+        print(f'[Read] Decompression finished in {execution_duration:.2f} seconds.')
 
     def map(self, func: Callable[[dict], None]):
         """

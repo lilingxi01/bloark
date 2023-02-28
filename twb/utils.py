@@ -92,7 +92,7 @@ def get_estimated_size(path: str) -> int:
             space = z.archiveinfo().uncompressed
         return space * 2
     elif path.endswith('.zst'):
-        with open('compressed_file.zst', 'rb') as f:
+        with open(path, 'rb') as f:
             # Get the frame information for the compressed file
             space = zstd.frame_content_size(f.read(18))
             if space <= 0:
