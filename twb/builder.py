@@ -14,6 +14,9 @@ from .parallelization import RDSProcessManager, RDSProcessController
 import cuid
 
 
+articles_per_block = 40
+
+
 class Builder:
     """
     The core class to generate the blocks from Wikipedia Edit History chunk.
@@ -168,19 +171,25 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
         The super callback for the XML parser.
         """
         nonlocal article_count, total_article_count, curr_output_path
-        if article_count >= 50:
-            print(f'[Build] >>> Progress: {total_article_count} articles processed.'
-                  f'(Current output path: {curr_output_path}) (Memory: {get_memory_consumption() / 1024 / 1024} MB)')
+        if article_count >= articles_per_block:
             article_count = 0
             curr_output_path = get_new_output_path()
         article_count += 1
         total_article_count += 1
         _store_article_to_jsonl(article=article, output_path=curr_output_path)
 
+        print(f'[Build] >>> Progress: {total_article_count} articles processed.'
+              f'(Output: {curr_output_path}) (Memory: {get_memory_consumption() / 1024 / 1024} MB)')
+
     # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
     # Therefore, we don't have to keep all the results in the memory, which is a huge problem.
     for path in decompressed_files:
-        _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
+        try:
+            _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
+        except Exception as e:
+            print(f'[Build] >>> Error occurred while parsing: {path}'
+                  f'(Memory: {get_memory_consumption() / 1024 / 1024} MB)')
+            print('[ERROR]', e)
 
     print(f'[Build] Parsing done. {total_article_count} articles in total.'
           f'(Memory: {get_memory_consumption() / 1024 / 1024} MB)')
@@ -239,15 +248,11 @@ def _parse_xml(path: str, processor: BlockInteriorProcessor, super_callback: Cal
     :return: the list of parsed results
     """
     with open(path, 'rb') as xml_file:
-        try:
-            xmltodict.parse(
-                xml_file,
-                item_depth=processor.read_depth,
-                item_callback=lambda x, y: _xml_parser_callback(x, y, processor, super_callback)
-            )
-        except xmltodict.ParsingInterrupted as e:
-            # We don't need to handle this exception because this should be intended.
-            pass
+        xmltodict.parse(
+            xml_file,
+            item_depth=processor.read_depth,
+            item_callback=lambda x, y: _xml_parser_callback(x, y, processor, super_callback)
+        )
 
 
 def _store_article_to_jsonl(article: dict, output_path: str):
