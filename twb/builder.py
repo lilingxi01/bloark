@@ -159,6 +159,7 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
         curr_index = str(controller.declare_index()).zfill(5)
         return os.path.join(compression_target_dir, f'block_{curr_index}.jsonl')
 
+    total_article_count = 0
     article_count = 0
     curr_output_path = get_new_output_path()
 
@@ -166,18 +167,23 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
         """
         The super callback for the XML parser.
         """
-        nonlocal article_count, curr_output_path
+        nonlocal article_count, total_article_count, curr_output_path
         if article_count >= 50:
+            print(f'[Build] >>> Progress: {total_article_count} articles processed.'
+                  f'(Current output path: {curr_output_path}) (Memory: {get_memory_consumption() / 1024 / 1024} MB)')
             article_count = 0
             curr_output_path = get_new_output_path()
         article_count += 1
+        total_article_count += 1
         _store_article_to_jsonl(article=article, output_path=curr_output_path)
 
+    # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
+    # Therefore, we don't have to keep all the results in the memory, which is a huge problem.
     for path in decompressed_files:
-        # TODO: Memory consumption is not considered yet. Need to be fixed.
-        #  We are able to store into JSONL files in a streaming manner, along the way of parsing XML files.
-        #  Therefore, we don't have to keep all the results in the memory, which is a huge problem.
         _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
+
+    print(f'[Build] Parsing done. {total_article_count} articles in total.'
+          f'(Memory: {get_memory_consumption() / 1024 / 1024} MB)')
 
     # Delete temporary files for decompression.
     shutil.rmtree(decompression_temp_dir)
@@ -195,8 +201,6 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
 
     # Release the RDS process controller for freeing up the disk space constraint.
     controller.release()
-
-    print('[Build] *** Memory consumption:', get_memory_consumption() / 1024 / 1024, 'MB')
 
 
 def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
