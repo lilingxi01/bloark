@@ -2,6 +2,7 @@ import os
 from queue import Empty
 from typing import Union, Callable
 from multiprocessing import Manager, Lock, Value, Queue, Process, cpu_count
+import signal
 
 
 class RDSProcessController:
@@ -109,7 +110,12 @@ class RDSProcessManager:
         # Wait for all processes to finish.
         for process in process_pool:
             process.join()
-            print(f'[RDS-PM] Process {process.pid} closing. ({process.exitcode})')  # Process exit code.
+            curr_exitcode = process.exitcode
+            if curr_exitcode < 0:
+                signal_name = signal.Signals(abs(curr_exitcode)).name
+            else:
+                signal_name = str(curr_exitcode)
+            print(f'[RDS-PM] Process {process.pid} closing. ({signal_name})')  # Process exit code.
             process.close()
 
 
