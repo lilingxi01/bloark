@@ -2,21 +2,21 @@ import os
 import shutil
 
 from utils.mock_7z_files import get_mock_7z_filenames
-from twb import TemporalWikiBlocks
+import twb
 
 
 def test_build_preload():
     # Test that nothing is raised.
-    twb = TemporalWikiBlocks()
-    twb.preload('./test/sample_data/minimal_sample.xml')
+    builder = twb.Builder()
+    builder.preload('./test/sample_data/minimal_sample.xml')
 
 
 def test_build_no_compress():
     test_file_count = 10
 
-    twb = TemporalWikiBlocks()
-    twb.preload(get_mock_data_dir(test_file_count=test_file_count))
-    twb.build('./test/output', num_proc=4, compress=False)
+    builder = twb.Builder()
+    builder.preload(get_mock_data_dir(test_file_count=test_file_count))
+    builder.build('./test/output', num_proc=4, compress=False)
 
     for i in range(test_file_count):
         assert os.path.exists(f'./test/output/block_{str(i).zfill(5)}.jsonl')
@@ -27,9 +27,9 @@ def test_build_no_compress():
 def test_build_compressed():
     test_file_count = 10
 
-    twb = TemporalWikiBlocks()
-    twb.preload(get_mock_data_dir(test_file_count=test_file_count))
-    twb.build('./test/output', num_proc=4, compress=True)
+    builder = twb.Builder()
+    builder.preload(get_mock_data_dir(test_file_count=test_file_count))
+    builder.build('./test/output', num_proc=4, compress=True)
 
     for i in range(test_file_count):
         assert os.path.exists(f'./test/output/block_{str(i).zfill(5)}.jsonl.zst')

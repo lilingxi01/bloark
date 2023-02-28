@@ -2,6 +2,7 @@ import os
 from typing import List
 import zstandard as zstd
 import py7zr
+import shutil
 
 
 def get_file_list(input_path: str) -> List[str]:
@@ -57,11 +58,32 @@ def compress_zstd(input_path: str, output_path: str):
     :param input_path: the input path
     :param output_path: the output path
     """
-
     # Compress the blocks.
     compressor = zstd.ZstdCompressor()
     with open(input_path, "rb") as ifh, open(output_path, "wb") as ofh:
         compressor.copy_stream(ifh, ofh)
+
+
+def decompress_zstd(input_path: str, output_path: str):
+    """
+    Decompress the blocks from a Zstandard file.
+    :param input_path: the input path
+    :param output_path: the output path
+    """
+    # Decompress the blocks.
+    decompressor = zstd.ZstdDecompressor()
+    with open(input_path, "rb") as ifh, open(output_path, "wb") as ofh:
+        decompressor.copy_stream(ifh, ofh)
+
+
+def compute_total_available_space(total_space: int, output_dir: str) -> int:
+    total_available_space = shutil.disk_usage(output_dir).free if total_space is None else total_space
+
+    # Display the total available space in GB.
+    total_available_space_gb = total_available_space / 1024 / 1024 / 1024
+    print('[Build] RDS space limitation:', round(total_available_space_gb, 2), 'GB.')
+
+    return total_available_space
 
 
 def get_estimated_size(path: str) -> int:
@@ -69,5 +91,13 @@ def get_estimated_size(path: str) -> int:
         with py7zr.SevenZipFile(path, 'r') as z:
             space = z.archiveinfo().uncompressed
         return space * 2
+    elif path.endswith('.zst'):
+        with open('compressed_file.zst', 'rb') as f:
+            # Get the frame information for the compressed file
+            space = zstd.frame_content_size(f.read(18))
+            if space <= 0:
+                return os.path.getsize(path) * 2
+            else:
+                return space * 2
     else:
         return os.path.getsize(path) * 2

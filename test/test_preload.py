@@ -1,30 +1,43 @@
 import pytest
 
 from utils.mock_preload_files import get_testing_files, testing_dir_path
-from twb import TemporalWikiBlocks
+import twb
 
 
 def test_preload_empty_path():
-    twb = TemporalWikiBlocks()
+    builder = twb.Builder()
     with pytest.raises(ValueError):
-        twb.preload('')
+        builder.preload('')
+
+    reader = twb.Reader()
+    with pytest.raises(ValueError):
+        reader.preload('')
 
 
 def test_preload_not_exist_path():
-    twb = TemporalWikiBlocks()
+    builder = twb.Builder()
     with pytest.raises(FileNotFoundError):
-        twb.preload('./not_exist_path')
+        builder.preload('./not_exist_path')
+
+    reader = twb.Reader()
+    with pytest.raises(FileNotFoundError):
+        reader.preload('./not_exist_path')
 
 
 def test_preload_file_path():
-    twb = TemporalWikiBlocks()
-    twb.preload(testing_dir_path)
+    builder = twb.Builder()
+    builder.preload(testing_dir_path)
+
+    reader = twb.Reader()
+    reader.preload(testing_dir_path)
 
     testing_files = get_testing_files()
 
     # Check if the files are loaded correctly.
-    assert len(twb.files) == len(testing_files)
+    assert len(builder.files) == len(testing_files)
+    assert len(reader.files) == len(testing_files)
 
     # Check if the files are all loaded.
     for file in testing_files:
-        assert twb.files.index(file) != -1
+        assert builder.files.index(file) != -1
+        assert reader.files.index(file) != -1
