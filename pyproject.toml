@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "twb-project"
-version = "0.0.3"
+version = "0.0.5"
 description = ""
 authors = ["Lingxi Li <lilingxi01@gmail.com>"]
 license = "GNU GPL"
