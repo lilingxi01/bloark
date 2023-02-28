@@ -1,12 +1,13 @@
 import os
 import shutil
 import time
-from typing import List, Union
+from typing import List, Union, Callable
 import xmltodict
 import py7zr
 import jsonlines
 
-from .utils import get_file_list, compress_zstd, get_estimated_size, compute_total_available_space
+from .utils import get_file_list, compress_zstd, get_estimated_size, compute_total_available_space, \
+    get_memory_consumption
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
 
@@ -146,40 +147,64 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
         print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
 
     decompressed_files = get_file_list(decompression_temp_dir)
-    all_results = []
-    for path in decompressed_files:
-        results = _parse_xml(path=path, processor=block_interior_processor)
-        all_results.extend(results)
 
-    # Divide the results into blocks.
-    blocks = _divide_into_blocks(original_list=all_results, count_per_block=50)
+    # TODO: This is a temporary solution. Need to adapt with the non-compression approach.
+    compression_target_dir = compression_temp_dir if should_compress else output_dir
+
+    def get_new_output_path():
+        """
+        Get the path of the next output file.
+        """
+        nonlocal controller, compression_target_dir
+        curr_index = str(controller.declare_index()).zfill(5)
+        return os.path.join(compression_target_dir, f'block_{curr_index}.jsonl')
+
+    article_count = 0
+    curr_output_path = get_new_output_path()
+
+    def _super_callback(article: dict):
+        """
+        The super callback for the XML parser.
+        """
+        nonlocal article_count, curr_output_path
+        if article_count >= 50:
+            article_count = 0
+            curr_output_path = get_new_output_path()
+        article_count += 1
+        _store_article_to_jsonl(article=article, output_path=curr_output_path)
+
+    for path in decompressed_files:
+        # TODO: Memory consumption is not considered yet. Need to be fixed.
+        #  We are able to store into JSONL files in a streaming manner, along the way of parsing XML files.
+        #  Therefore, we don't have to keep all the results in the memory, which is a huge problem.
+        _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
+
+    # Delete temporary files for decompression.
+    shutil.rmtree(decompression_temp_dir)
 
     if should_compress:
         # Store the results to JSONL files.
-        json_files = _store_to_jsonl(blocks=blocks, output_dir=compression_temp_dir, controller=controller)
+        json_files = get_file_list(compression_temp_dir)
 
         # Compress the files.
         for json_file in json_files:
             _compress_file(path=json_file, output_dir=output_dir)
-    else:
-        # Store the results to JSONL files.
-        _store_to_jsonl(blocks=blocks, output_dir=output_dir, controller=controller)
 
-    # Delete temporary files.
+    # Delete temporary files for re-compression.
     shutil.rmtree(compression_temp_dir)
-    shutil.rmtree(decompression_temp_dir)
 
     # Release the RDS process controller for freeing up the disk space constraint.
     controller.release()
 
+    print('[Build] *** Memory consumption:', get_memory_consumption() / 1024 / 1024, 'MB')
 
-def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, results: list):
+
+def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
     """
     The callback function for the XML parser.
     :param path: the path of the current item
     :param item: children dictionary
     :param processor: the interior processor for blocks
-    :param results: the list of results (to be appended onto)
     :return: True if the parsing should continue, False otherwise
     """
     tag_name = path[-1][0]
@@ -189,7 +214,7 @@ def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, results:
     if tag_name != 'page':
         return True
 
-    # If the item is not a dictionary, it means that the item is a leaf node and we don't expect it to be a block.
+    # If the item is not a dictionary, it means that the item is a leaf node, and we don't expect it to be a block.
     if item_type is not dict:
         return True
 
@@ -197,65 +222,39 @@ def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, results:
 
     # If the item is not None, it means that the item is a block and we should append it to the results.
     if processed_item is not None:
-        results.append(processed_item)
+        super_callback(processed_item)
 
     return True
 
 
-def _parse_xml(path: str, processor: BlockInteriorProcessor) -> List[dict]:
+def _parse_xml(path: str, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
     """
     Parse the XML file into a list of JSON objects.
     :param path: the path of the XML file
     :param processor: the interior processor for blocks
     :return: the list of parsed results
     """
-    results = []
-
     with open(path, 'rb') as xml_file:
         try:
             xmltodict.parse(
                 xml_file,
                 item_depth=processor.read_depth,
-                item_callback=lambda x, y: _xml_parser_callback(x, y, processor, results)
+                item_callback=lambda x, y: _xml_parser_callback(x, y, processor, super_callback)
             )
         except xmltodict.ParsingInterrupted as e:
             # We don't need to handle this exception because this should be intended.
             pass
 
-    # Return the results as a list of JSON objects (so that they can be thrown into a JSONL file).
-    return results
 
-
-def _divide_into_blocks(original_list: List[dict], count_per_block: int = 50) -> List[List[dict]]:
-    """
-    Divide the original list into blocks.
-    :param original_list: the original list
-    :param count_per_block: the number of items per block
-    :return: the list of blocks
-    """
-    # Divide original_list into blocks every count_per_block items.
-    return [original_list[i:i + count_per_block] for i in range(0, len(original_list), count_per_block)]
-
-
-def _store_to_jsonl(blocks: List[List[dict]], output_dir: str, controller: RDSProcessController) -> List[str]:
+def _store_article_to_jsonl(article: dict, output_path: str):
     """
     Store the blocks to a JSONL file.
-    :param blocks: the blocks to store
-    :param output_dir: the directory to store the JSONL files
-    :param controller: the controller for the process
+    :param article: the article to store
+    :param output_path: the path to store the JSONL file
     :return: the list of JSONL file paths
     """
-    curr_index = str(controller.declare_index()).zfill(5)
-
-    jsonl_files = []  # Store all the JSONL file paths for future compression.
-
-    for i in range(len(blocks)):
-        curr_path = os.path.join(output_dir, f'block_{curr_index}.jsonl')
-        with jsonlines.open(curr_path, 'w') as writer:
-            writer.write_all(blocks[i])
-        jsonl_files.append(curr_path)
-
-    return jsonl_files
+    with jsonlines.open(output_path, 'a') as writer:
+        writer.write(article)
 
 
 # The extension of the compressed file.

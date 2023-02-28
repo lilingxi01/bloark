@@ -1,7 +1,7 @@
 import os
 from queue import Empty
 from typing import Union, Callable
-from multiprocessing import Manager, Lock, Value, Queue, Process, set_start_method, cpu_count
+from multiprocessing import Manager, Lock, Value, Queue, Process, cpu_count
 
 
 class RDSProcessController:
@@ -109,7 +109,7 @@ class RDSProcessManager:
         # Wait for all processes to finish.
         for process in process_pool:
             process.join()
-            print(f'[RDS-PM] Process {process.pid} closing.')
+            print(f'[RDS-PM] Process {process.pid} closing. ({process.exitcode})')  # Process exit code.
             process.close()
 
 

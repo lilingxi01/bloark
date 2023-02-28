@@ -284,7 +284,7 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "65af1ad3655fc640e04ecfb302b7f282607e70072d41ff120a4bd3cfe654c15f"
+content-hash = "267337be7202399ea35f44cdb546b2b0e14fcf61b756a274c68baa029aaffd24"
 
 [metadata.files]
 attrs = [

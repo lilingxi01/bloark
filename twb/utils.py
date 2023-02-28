@@ -3,6 +3,7 @@ from typing import List
 import zstandard as zstd
 import py7zr
 import shutil
+import psutil
 
 
 def get_file_list(input_path: str) -> List[str]:
@@ -101,3 +102,8 @@ def get_estimated_size(path: str) -> int:
                 return space * 2
     else:
         return os.path.getsize(path) * 2
+
+
+def get_memory_consumption() -> int:
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss
