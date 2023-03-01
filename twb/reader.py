@@ -42,13 +42,13 @@ class Reader:
 
     def decompress(self,
                    output_dir: str,
-                   total_space: Union[int, None] = None,
-                   num_proc: Union[int, None] = None):
+                   num_proc: Union[int, None] = None,
+                   total_space: Union[int, None] = None):
         """
         Decompress the files.
         :param output_dir: the output directory
-        :param total_space: the total available space in bytes
         :param num_proc: the number of processes to use
+        :param total_space: the total available space in bytes
         """
 
         if not os.path.exists(output_dir):

@@ -4,8 +4,6 @@ from typing import Union, Callable, List
 from multiprocessing import Manager, Lock, Value, Queue, Process, cpu_count
 import signal
 
-from .utils import get_memory_consumption
-
 
 class RDSProcessController:
     def __init__(self,
@@ -127,7 +125,7 @@ class RDSProcessManager:
                 signal_name = signal.Signals(abs(curr_exitcode)).name
             else:
                 signal_name = str(curr_exitcode)
-            print(f'[RDS-PM] Process {process.pid} closing. (Code: {signal_name}) (Memory: {get_memory_consumption()})')
+            print(f'[RDS-PM] Process {process.pid} closing. ({signal_name})')
             process.close()
 
 

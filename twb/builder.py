@@ -301,6 +301,5 @@ def _compress_file(path: str, output_dir: str, controller: RDSProcessController)
     file_size = os.path.getsize(path)  # Get current file size.
     compressed_file_size = os.path.getsize(output_path)  # Get compressed file size.
     compression_ratio = compressed_file_size / file_size  # Calculate compression ratio.
-    controller.print(f"[Build] >>> Compression done: {output_path} -- {execution_duration:.2f} seconds")
-    controller.print(f"[Build] >>> >>> Compression ratio: ({compressed_file_size}/{file_size})"
-                     f"= {compression_ratio:.2f}x")
+    controller.print(f"[Build] >>> Compression done: {output_path} -- {execution_duration:.2f} seconds"
+                     f"-- {compression_ratio:.2f}x")
