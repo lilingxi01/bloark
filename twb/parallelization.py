@@ -1,19 +1,23 @@
 import os
 from queue import Empty
-from typing import Union, Callable
+from typing import Union, Callable, List
 from multiprocessing import Manager, Lock, Value, Queue, Process, cpu_count
 import signal
+
+from .utils import get_memory_consumption
 
 
 class RDSProcessController:
     def __init__(self,
                  space: int,
                  parallel_lock: Lock,
+                 logger_lock: Lock,
                  curr_index: Value,
                  registered_space: Value,
                  total_space: Union[int, None]):
         self.space = space
         self.parallel_lock = parallel_lock
+        self.logger_lock = logger_lock
         self.curr_index = curr_index
         self.registered_space = registered_space
         self.total_space = total_space
@@ -24,6 +28,11 @@ class RDSProcessController:
         self.curr_index.value += 1
         self.parallel_lock.release()
         return index
+
+    def print(self, *message: str):
+        self.logger_lock.acquire()
+        print(*message)
+        self.logger_lock.release()
 
     def release(self):
         if self.total_space is not None:
@@ -86,6 +95,7 @@ class RDSProcessManager:
         registered_space = manager.Value('i', 0)
 
         parallel_lock = Lock()
+        logger_lock = Lock()
 
         queue = Queue()
         for config in self.initial_queue:
@@ -101,7 +111,7 @@ class RDSProcessManager:
         for _ in range(selected_num_proc):
             process = Process(
                 target=process_consumer,
-                args=(queue, registered_space, curr_index, parallel_lock,
+                args=(queue, registered_space, curr_index, logger_lock, parallel_lock,
                       self.executable, self.total_space, self.context)
             )
             process.start()
@@ -111,17 +121,20 @@ class RDSProcessManager:
         for process in process_pool:
             process.join()
             curr_exitcode = process.exitcode
-            if curr_exitcode < 0:
+            if curr_exitcode == -9:
+                signal_name = 'Killed - probably out of memory'
+            elif curr_exitcode < 0:
                 signal_name = signal.Signals(abs(curr_exitcode)).name
             else:
                 signal_name = str(curr_exitcode)
-            print(f'[RDS-PM] Process {process.pid} closing. ({signal_name})')  # Process exit code.
+            print(f'[RDS-PM] Process {process.pid} closing. (Code: {signal_name}) (Memory: {get_memory_consumption()})')
             process.close()
 
 
 def process_consumer(queue: Queue,
                      registered_space: Value,
                      curr_index: Value,
+                     logger_lock: Lock,
                      parallel_lock: Lock,
                      executable: RDSProcessExecutable,
                      total_space: Union[int, None],
@@ -152,6 +165,7 @@ def process_consumer(queue: Queue,
         controller = RDSProcessController(
             space=space,
             parallel_lock=parallel_lock,
+            logger_lock=logger_lock,
             curr_index=curr_index,
             registered_space=registered_space,
             total_space=total_space

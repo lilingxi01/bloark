@@ -14,9 +14,6 @@ from .parallelization import RDSProcessManager, RDSProcessController
 import cuid
 
 
-articles_per_block = 40
-
-
 class Builder:
     """
     The core class to generate the blocks from Wikipedia Edit History chunk.
@@ -55,15 +52,17 @@ class Builder:
     def build(self,
               output_dir: str,
               processor: BlockInteriorProcessor = DefaultBIP(),
-              total_space: Union[int, None] = None,
               num_proc: Union[int, None] = None,
+              articles_per_block: int = 50,
+              total_space: Union[int, None] = None,
               compress: bool = True):
         """
         Build the blocks.
         :param processor: the interior processor for blocks (default: DefaultBIP)
         :param output_dir: the output directory for the blocks (will be created if not exists)
-        :param total_space: the total space for the temporary files (default: all available space on the disk)
         :param num_proc: the number of processes (default: number of CPUs)
+        :param articles_per_block: the number of articles per block (default: 50)
+        :param total_space: the total space for the temporary files (default: all available space on the disk)
         :param compress: whether to compress the blocks (default: True)
         :raise Warning: if there is no file to process
         """
@@ -94,6 +93,7 @@ class Builder:
         process_manager_context = {
             'processor': processor,
             'compress': compress,
+            'articles_per_block': articles_per_block,
         }
 
         # Determine the total space for the temporary files.
@@ -122,14 +122,15 @@ class Builder:
 def _file_processor(path: str, output_dir: str, controller: RDSProcessController, context: dict):
     # If the file is not a 7z file, skip it.
     if not path.endswith('.7z'):
-        print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
+        controller.print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
         return
 
-    print('[Build] >>> Decompressing:', path)
+    controller.print('[Build] >>> Decompressing:', path)
 
     # Get the block interior processor from the running context.
     block_interior_processor = context['processor'] if 'processor' in context else DefaultBIP()
     should_compress = context['compress'] if 'compress' in context else True
+    articles_per_block = context['articles_per_block'] if 'articles_per_block' in context else 50
 
     # Generate a UUID.
     temp_id = cuid.cuid()
@@ -147,7 +148,7 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
         end_time = time.time()
 
         execution_duration = end_time - start_time
-        print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
+        controller.print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
 
     decompressed_files = get_file_list(decompression_temp_dir)
 
@@ -164,35 +165,40 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
 
     total_article_count = 0
     article_count = 0
+    memory_usage_records = []
+    all_memory_usage_records = []
     curr_output_path = get_new_output_path()
 
     def _super_callback(article: dict):
         """
         The super callback for the XML parser.
         """
-        nonlocal article_count, total_article_count, curr_output_path
+        nonlocal total_article_count, article_count, memory_usage_records, curr_output_path
         if article_count >= articles_per_block:
+            # Store the max memory usage in previous batch.
+            max_memory_usage = max(memory_usage_records)
+            all_memory_usage_records.append(max_memory_usage)
+            controller.print(f'[Build] >>> Progress: {total_article_count} articles processed.'
+                             f'(Output: {curr_output_path}) (Max Memory: {max_memory_usage} MB)')
+            # Reset the counters.
             article_count = 0
+            memory_usage_records = []
             curr_output_path = get_new_output_path()
         article_count += 1
         total_article_count += 1
         _store_article_to_jsonl(article=article, output_path=curr_output_path)
-
-        print(f'[Build] >>> Progress: {total_article_count} articles processed.'
-              f'(Output: {curr_output_path}) (Memory: {get_memory_consumption() / 1024 / 1024} MB)')
+        memory_usage_records.append(get_memory_consumption())
 
     # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
     # Therefore, we don't have to keep all the results in the memory, which is a huge problem.
     for path in decompressed_files:
-        try:
-            _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
-        except Exception as e:
-            print(f'[Build] >>> Error occurred while parsing: {path}'
-                  f'(Memory: {get_memory_consumption() / 1024 / 1024} MB)')
-            print('[ERROR]', e)
+        _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
 
-    print(f'[Build] Parsing done. {total_article_count} articles in total.'
-          f'(Memory: {get_memory_consumption() / 1024 / 1024} MB)')
+    if len(memory_usage_records) > 0:
+        all_memory_usage_records.append(max(memory_usage_records))
+
+    controller.print(f'[Build] Parsing done. {total_article_count} articles processed in total.'
+                     f'(Highest Memory: {max(all_memory_usage_records)} MB)')
 
     # Delete temporary files for decompression.
     shutil.rmtree(decompression_temp_dir)
@@ -203,7 +209,7 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
 
         # Compress the files.
         for json_file in json_files:
-            _compress_file(path=json_file, output_dir=output_dir)
+            _compress_file(path=json_file, output_dir=output_dir, controller=controller)
 
     # Delete temporary files for re-compression.
     shutil.rmtree(compression_temp_dir)
@@ -270,7 +276,7 @@ def _store_article_to_jsonl(article: dict, output_path: str):
 compression_extension = '.zst'
 
 
-def _compress_file(path: str, output_dir: str):
+def _compress_file(path: str, output_dir: str, controller: RDSProcessController):
     """
     Compress a file.
     :param path: the path of the file to compress
@@ -279,12 +285,12 @@ def _compress_file(path: str, output_dir: str):
     """
     # If the file is not a JSONL file, skip it.
     if not path.endswith('.jsonl'):
-        print(f'[Build] >>> Skipped because the file is not a JSONL file. ({path})')
+        controller.print(f'[Build] >>> Skipped because the file is not a JSONL file. ({path})')
         return
 
     output_path = os.path.join(output_dir, os.path.basename(path) + compression_extension)
 
-    print('[Build] >>> Compressing:', path)
+    controller.print('[Build] >>> Compressing:', path)
 
     # Compress the file using Zstandard.
     start_time = time.time()
@@ -295,5 +301,6 @@ def _compress_file(path: str, output_dir: str):
     file_size = os.path.getsize(path)  # Get current file size.
     compressed_file_size = os.path.getsize(output_path)  # Get compressed file size.
     compression_ratio = compressed_file_size / file_size  # Calculate compression ratio.
-    print(f"[Build] >>> Compression done: {output_path} -- {execution_duration:.2f} seconds")
-    print(f"[Build] >>> >>> Compression ratio: ({compressed_file_size}/{file_size}) = {compression_ratio:.2f}x")
+    controller.print(f"[Build] >>> Compression done: {output_path} -- {execution_duration:.2f} seconds")
+    controller.print(f"[Build] >>> >>> Compression ratio: ({compressed_file_size}/{file_size})"
+                     f"= {compression_ratio:.2f}x")
