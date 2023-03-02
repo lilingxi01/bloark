@@ -17,7 +17,7 @@ def test_wiki_history_dump_download():
     assert len(downloader.url_batches) > 0
 
     # Compute the expected filenames.
-    pending_filenames = map(lambda url: url.split('/')[-1], downloader.url_batches)
+    pending_filenames = list(map(lambda url: url.split('/')[-1], downloader.url_batches))
 
     try:
         # Start the downloader.
@@ -31,7 +31,7 @@ def test_wiki_history_dump_download():
 
         # Check the downloaded files.
         for filepath in downloader.downloaded_files:
-            filename = os.path.basename(filepath)
+            filename = filepath.split('/')[-1]
             assert filename in pending_filenames
             assert os.path.exists(filepath)
     finally:

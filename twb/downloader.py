@@ -1,6 +1,6 @@
 import os
 from typing import List, Union
-
+from tqdm import tqdm
 import requests
 from bs4 import BeautifulSoup
 from abc import ABC, abstractmethod
@@ -109,7 +109,7 @@ class Downloader:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        print(f'[Downloader] Started downloading {len(url_batches)} files.')
+        print(f'[Downloader] Will download {len(url_batches)} files.')
 
         if self.profile.max_processes is not None:
             max_num_proc = self.profile.max_processes
@@ -120,13 +120,31 @@ class Downloader:
             num_proc = num_proc if num_proc is not None else os.cpu_count()
 
         # Download the files.
-        print(f'[Downloader] Using {num_proc} processes for downloading. (CPU count: {os.cpu_count()})')
-        with Pool(num_proc) as p:
-            self.downloaded_files = p.starmap(download_executor, [(url, output_dir) for url in url_batches])
+        print(f'[Downloader] Start downloading. (# of assigned processes: {num_proc})')
+        pool = Pool(processes=num_proc)
+        pbar = tqdm(total=len(url_batches))
+        downloaded_files = []
 
-        print(f'[Downloader] Done. Completed downloading {len(self.downloaded_files)} files.')
+        def _callback_update_pbar(*args):
+            nonlocal downloaded_files
+            downloaded_files.append(args[0])
+            pbar.update()
 
+        # Start processes.
+        for i in range(pbar.total):
+            url = url_batches[i]
+            pool.apply_async(download_executor, args=(url, output_dir), callback=_callback_update_pbar)
+
+        # Wait for all processes to finish.
+        pool.close()
+        pool.join()
+
+        pbar.close()
+
+        self.downloaded_files = downloaded_files
         self.is_completed = True
+
+        print(f'[Downloader] Downloading completed. {len(downloaded_files)} files are downloaded.')
 
 
 class DownloadProfile(ABC):
@@ -168,15 +186,13 @@ class WikiHistoryDumpDownloadProfile(DownloadProfile):
 
 # TODO: Progress bar for downloading.
 def download_executor(url: str, target_dir: str):
-    print(f'[Downloader] Start downloading: {url}')
     # Compute the target path. Should assume that target dir exists.
     target_path = os.path.join(target_dir, url.split('/')[-1])
     # Download the file using a stream.
     with requests.get(url, stream=True) as r:
         r.raise_for_status()
         with open(target_path, 'wb') as f:
-            # Write the file in chunks of 5 MB for reduced memory usage.
-            for chunk in r.iter_content(chunk_size=5 * 1024 * 1024):
+            # Write the file in chunks of 10 MB for reduced memory usage.
+            for chunk in r.iter_content(chunk_size=10 * 1024 * 1024):
                 f.write(chunk)
-    print(f'[Downloader] Finish downloading: {url}')
     return target_path
