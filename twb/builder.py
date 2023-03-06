@@ -54,6 +54,7 @@ class Builder:
               processor: BlockInteriorProcessor = DefaultBIP(),
               num_proc: Union[int, None] = None,
               articles_per_block: int = 50,
+              start_index: int = 0,
               total_space: Union[int, None] = None,
               compress: bool = True):
         """
@@ -62,6 +63,7 @@ class Builder:
         :param output_dir: the output directory for the blocks (will be created if not exists)
         :param num_proc: the number of processes (default: number of CPUs)
         :param articles_per_block: the number of articles per block (default: 50)
+        :param start_index: the starting index of the blocks (default: 0)
         :param total_space: the total space for the temporary files (default: all available space on the disk)
         :param compress: whether to compress the blocks (default: True)
         :raise Warning: if there is no file to process
@@ -103,7 +105,8 @@ class Builder:
             executable=_file_processor,
             total_space=total_available_space,
             num_proc=num_proc,
-            context=process_manager_context
+            context=process_manager_context,
+            start_index=start_index,
         )
         for path in zip_file_list:
             process_manager.register(path, output_dir, get_estimated_size(path))

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "twb-project"
-version = "0.1.1"
+version = "0.1.5"
 description = ""
 authors = ["Lingxi Li <lilingxi01@gmail.com>"]
 license = "GNU GPL"
@@ -10,7 +10,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = ">=3.8,<4"
 py7zr = "^0.20.4"
 xmltodict = "^0.13.0"
 jsonlines = "^3.1.0"

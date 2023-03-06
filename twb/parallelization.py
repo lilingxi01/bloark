@@ -1,6 +1,6 @@
 import os
 from queue import Empty
-from typing import Union, Callable, List
+from typing import Union, Callable
 from multiprocessing import Manager, Lock, Value, Queue, Process, cpu_count
 import signal
 
@@ -50,17 +50,22 @@ class RDSProcessManager:
                  executable: RDSProcessExecutable,
                  total_space: Union[int, None] = None,
                  num_proc: Union[int, None] = None,
-                 context: Union[None, dict] = None):
+                 context: Union[None, dict] = None,
+                 start_index: int = 0):
         """
         :param executable: the executable function
         :param total_space: the total space to be used (default: the total space of the disk)
         :param num_proc: the number of processes to be used (default: the number of CPUs)
         :param context: the context to be passed to the executable function
+        :param start_index: the start index of the process
         """
         self.executable = executable
         self.total_space = total_space
         self.num_proc = num_proc
         self.context = context
+
+        self.manager = Manager()
+        self.curr_index = self.manager.Value('i', start_index)
 
         self.initial_queue = []
 
@@ -88,12 +93,12 @@ class RDSProcessManager:
         self.initial_queue.append((path, output_dir, space))
 
     def start(self):
-        manager = Manager()
-        curr_index = manager.Value('i', 0)
-        registered_space = manager.Value('i', 0)
-
+        # Initialize locks.
         parallel_lock = Lock()
         logger_lock = Lock()
+
+        # Initialize the registered space, a process-safe variable.
+        registered_space = self.manager.Value('i', 0)
 
         queue = Queue()
         for config in self.initial_queue:
@@ -109,7 +114,7 @@ class RDSProcessManager:
         for _ in range(selected_num_proc):
             process = Process(
                 target=process_consumer,
-                args=(queue, registered_space, curr_index, logger_lock, parallel_lock,
+                args=(queue, registered_space, self.curr_index, logger_lock, parallel_lock,
                       self.executable, self.total_space, self.context)
             )
             process.start()
