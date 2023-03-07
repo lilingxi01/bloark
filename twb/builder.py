@@ -6,12 +6,11 @@ import xmltodict
 import py7zr
 import jsonlines
 
-from .utils import get_file_list, compress_zstd, get_estimated_size, compute_total_available_space, \
-    get_memory_consumption
+from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
 
-import cuid
+import uuid
 
 
 class Builder:
@@ -55,7 +54,6 @@ class Builder:
               num_proc: Union[int, None] = None,
               articles_per_block: int = 50,
               start_index: int = 0,
-              total_space: Union[int, None] = None,
               compress: bool = True):
         """
         Build the blocks.
@@ -64,7 +62,6 @@ class Builder:
         :param num_proc: the number of processes (default: number of CPUs)
         :param articles_per_block: the number of articles per block (default: 50)
         :param start_index: the starting index of the blocks (default: 0)
-        :param total_space: the total space for the temporary files (default: all available space on the disk)
         :param compress: whether to compress the blocks (default: True)
         :raise Warning: if there is no file to process
         """
@@ -98,31 +95,34 @@ class Builder:
             'articles_per_block': articles_per_block,
         }
 
-        # Determine the total space for the temporary files.
-        total_available_space = compute_total_available_space(total_space=total_space, output_dir=output_dir)
+        start_time = time.time()
 
-        process_manager = RDSProcessManager(
-            executable=_file_processor,
-            total_space=total_available_space,
+        pm = RDSProcessManager(
             num_proc=num_proc,
-            context=process_manager_context,
             start_index=start_index,
         )
         for path in zip_file_list:
-            process_manager.register(path, output_dir, get_estimated_size(path))
+            pm.apply_async(
+                executable=_file_processor,
+                args=(path, output_dir, process_manager_context)
+            )
 
-        start_time = time.time()
-        process_manager.start()
+        pm.close()
+        pm.join()
+
         end_time = time.time()
         execution_duration = end_time - start_time
         print(f"[Build] All done. (Took {execution_duration:.2f} seconds in total)")
 
         # Clean up the temporary directory.
-        shutil.rmtree(compression_temp_dir)
-        shutil.rmtree(decompression_temp_dir)
+        cleanup_dir(compression_temp_dir)
+        cleanup_dir(decompression_temp_dir)
 
 
-def _file_processor(path: str, output_dir: str, controller: RDSProcessController, context: dict):
+def _file_processor(controller: RDSProcessController,
+                    path: str,
+                    output_dir: str,
+                    context: dict):
     # If the file is not a 7z file, skip it.
     if not path.endswith('.7z'):
         controller.print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
@@ -135,90 +135,91 @@ def _file_processor(path: str, output_dir: str, controller: RDSProcessController
     should_compress = context['compress'] if 'compress' in context else True
     articles_per_block = context['articles_per_block'] if 'articles_per_block' in context else 50
 
-    # Generate a UUID.
-    temp_id = cuid.cuid()
-
+    temp_id = uuid.uuid4().hex
     compression_temp_dir = os.path.join(output_dir, 'compression_temp', temp_id)
-    os.makedirs(compression_temp_dir)
-
     decompression_temp_dir = os.path.join(output_dir, 'decompression_temp', temp_id)
-    os.makedirs(decompression_temp_dir)
 
-    # Decompress the file.
-    with py7zr.SevenZipFile(path, mode='r') as z:
-        start_time = time.time()
-        z.extractall(path=decompression_temp_dir)
-        end_time = time.time()
+    try:
+        # Create temporary directories.
+        os.makedirs(compression_temp_dir)
+        os.makedirs(decompression_temp_dir)
 
-        execution_duration = end_time - start_time
-        controller.print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
+        # Decompress the file.
+        with py7zr.SevenZipFile(path, mode='r') as z:
+            start_time = time.time()
+            z.extractall(path=decompression_temp_dir)
+            end_time = time.time()
 
-    decompressed_files = get_file_list(decompression_temp_dir)
+            execution_duration = end_time - start_time
+            controller.print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
 
-    # TODO: This is a temporary solution. Need to adapt with the non-compression approach.
-    compression_target_dir = compression_temp_dir if should_compress else output_dir
+        decompressed_files = get_file_list(decompression_temp_dir)
 
-    def get_new_output_path():
-        """
-        Get the path of the next output file.
-        """
-        nonlocal controller, compression_target_dir
-        curr_index = str(controller.declare_index()).zfill(5)
-        return os.path.join(compression_target_dir, f'block_{curr_index}.jsonl')
+        def get_new_output_path():
+            """
+            Get the path of the next output file.
+            """
+            nonlocal controller, compression_target_dir
+            curr_index = str(controller.declare_index()).zfill(5)
+            return os.path.join(compression_target_dir, f'block_{curr_index}.jsonl')
 
-    total_article_count = 0
-    article_count = 0
-    memory_usage_records = []
-    all_memory_usage_records = []
-    curr_output_path = get_new_output_path()
+        compression_target_dir = compression_temp_dir if should_compress else output_dir
 
-    def _super_callback(article: dict):
-        """
-        The super callback for the XML parser.
-        """
-        nonlocal total_article_count, article_count, memory_usage_records, curr_output_path
-        if article_count >= articles_per_block:
-            # Store the max memory usage in previous batch.
-            max_memory_usage = max(memory_usage_records)
-            all_memory_usage_records.append(max_memory_usage)
-            controller.print(f'[Build] >>> Progress: {total_article_count} articles processed.'
-                             f'(Output: {curr_output_path}) (Max Memory: {max_memory_usage} MB)')
-            # Reset the counters.
-            article_count = 0
-            memory_usage_records = []
-            curr_output_path = get_new_output_path()
-        article_count += 1
-        total_article_count += 1
-        _store_article_to_jsonl(article=article, output_path=curr_output_path)
-        memory_usage_records.append(get_memory_consumption())
+        total_article_count = 0
+        article_count = 0
+        memory_usage_records = []
+        all_memory_usage_records = []
+        curr_output_path = get_new_output_path()
 
-    # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
-    # Therefore, we don't have to keep all the results in the memory, which is a huge problem.
-    for path in decompressed_files:
-        _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
+        def _super_callback(article: dict):
+            """
+            The super callback for the XML parser.
+            """
+            nonlocal total_article_count, article_count, memory_usage_records, curr_output_path
+            if article_count >= articles_per_block:
+                # Store the max memory usage in previous batch.
+                max_memory_usage = max(memory_usage_records)
+                all_memory_usage_records.append(max_memory_usage)
+                controller.print(f'[Build] >>> Progress: {total_article_count} articles processed.'
+                                 f'(Output: {curr_output_path}) (Max Memory: {max_memory_usage} MB)')
+                # Reset the counters.
+                article_count = 0
+                memory_usage_records = []
+                curr_output_path = get_new_output_path()
+            article_count += 1
+            total_article_count += 1
+            _store_article_to_jsonl(article=article, output_path=curr_output_path)
+            memory_usage_records.append(get_memory_consumption())
 
-    if len(memory_usage_records) > 0:
-        all_memory_usage_records.append(max(memory_usage_records))
+        # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
+        # Therefore, we don't have to keep all the results in the memory, which is a huge problem.
+        for path in decompressed_files:
+            _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
 
-    controller.print(f'[Build] Parsing done. {total_article_count} articles processed in total.'
-                     f'(Highest Memory: {max(all_memory_usage_records)} MB)')
+        if len(memory_usage_records) > 0:
+            all_memory_usage_records.append(max(memory_usage_records))
 
-    # Delete temporary files for decompression.
-    shutil.rmtree(decompression_temp_dir)
+        controller.print(f'[Build] Parsing done. {total_article_count} articles processed in total.'
+                         f'(Highest Memory: {max(all_memory_usage_records)} MB)')
 
-    if should_compress:
-        # Store the results to JSONL files.
-        json_files = get_file_list(compression_temp_dir)
+        cleanup_dir(decompression_temp_dir)  # Delete temporary files for decompression.
 
-        # Compress the files.
-        for json_file in json_files:
-            _compress_file(path=json_file, output_dir=output_dir, controller=controller)
+        if should_compress:
+            # Store the results to JSONL files.
+            json_files = get_file_list(compression_temp_dir)
 
-    # Delete temporary files for re-compression.
-    shutil.rmtree(compression_temp_dir)
+            # Compress the files.
+            for json_file in json_files:
+                _compress_file(path=json_file, output_dir=output_dir, controller=controller)
 
-    # Release the RDS process controller for freeing up the disk space constraint.
-    controller.release()
+    except Exception as e:
+        controller.print(f'[ERROR] Decompression failed: {path}')
+        controller.print(f'[ERROR] >>> Error: {e}')
+    finally:
+        # Clean up the temporary directory.
+        cleanup_dir(decompression_temp_dir)
+        cleanup_dir(compression_temp_dir)
+        print(f'[Build] >>> Cleaned up temporary ID: {temp_id}')
 
 
 def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):

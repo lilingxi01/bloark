@@ -77,12 +77,15 @@ def decompress_zstd(input_path: str, output_path: str):
         decompressor.copy_stream(ifh, ofh)
 
 
-def compute_total_available_space(total_space: int, output_dir: str) -> int:
-    total_available_space = shutil.disk_usage(output_dir).free if total_space is None else total_space
+def compute_total_available_space(output_dir: str) -> int:
+    """
+    Deprecated: Compute the total available space in the output directory.
+    """
+    total_available_space = shutil.disk_usage(output_dir).free
 
     # Display the total available space in GB.
     total_available_space_gb = total_available_space / 1024 / 1024 / 1024
-    print('[Build] RDS space limitation:', round(total_available_space_gb, 2), 'GB.')
+    print('[Build] RDS space limitation (deprecated):', round(total_available_space_gb, 2), 'GB.')
 
     return total_available_space
 
@@ -108,3 +111,12 @@ def get_memory_consumption() -> int:
     process = psutil.Process(os.getpid())
     memory_usage_mb = process.memory_info().rss / 1024 / 1024
     return round(memory_usage_mb, 3)
+
+
+def cleanup_dir(path: str):
+    """
+    Clean up the directory.
+    :param path: the directory path
+    """
+    if os.path.exists(path):
+        shutil.rmtree(path)

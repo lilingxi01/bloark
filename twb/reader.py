@@ -2,8 +2,8 @@ import os
 from typing import Callable, Union
 import time
 
-from .parallelization import RDSProcessController, RDSProcessManager
-from .utils import get_file_list, decompress_zstd, get_estimated_size, compute_total_available_space
+from .parallelization import RDSProcessManager, RDSProcessController
+from .utils import get_file_list, decompress_zstd
 
 
 class Reader:
@@ -42,31 +42,30 @@ class Reader:
 
     def decompress(self,
                    output_dir: str,
-                   num_proc: Union[int, None] = None,
-                   total_space: Union[int, None] = None):
+                   num_proc: Union[int, None] = None):
         """
         Decompress the files.
         :param output_dir: the output directory
         :param num_proc: the number of processes to use
-        :param total_space: the total available space in bytes
         """
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # Determine the total space for the temporary files.
-        total_available_space = compute_total_available_space(total_space=total_space, output_dir=output_dir)
+        start_time = time.time()
 
-        process_manager = RDSProcessManager(
-            executable=_decompress_processor,
-            total_space=total_available_space,
+        pm = RDSProcessManager(
             num_proc=num_proc
         )
         for file in self.files:
-            process_manager.register(path=file, output_dir=output_dir, space=get_estimated_size(file))
+            pm.apply_async(
+                executable=_decompress_file,
+                args=(file, output_dir)
+            )
 
-        start_time = time.time()
-        process_manager.start()
+        pm.close()
+        pm.join()
+
         end_time = time.time()
         execution_duration = end_time - start_time
         print(f'[Read] Decompression finished in {execution_duration:.2f} seconds.')
@@ -80,12 +79,7 @@ class Reader:
         pass
 
 
-def _decompress_processor(path: str, output_dir: str, controller: RDSProcessController, context: dict):
-    _decompress_file(path, output_dir)
-    controller.release()
-
-
-def _decompress_file(path: str, output_dir: str):
+def _decompress_file(controller: RDSProcessController, path: str, output_dir: str):
     original_name = os.path.split(path)[1]
     decompressed_name = original_name.replace('.zst', '')
     decompressed_path = os.path.join(output_dir, decompressed_name)
