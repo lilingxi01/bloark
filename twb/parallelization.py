@@ -26,7 +26,7 @@ class RDSProcessController:
 
 # Generic type for the callable function.
 _R = TypeVar("_R")
-RDSProcessExecutable = Callable[[RDSProcessController, ...], _R]
+RDSProcessExecutable = Callable[..., _R]  # TODO: Add wild args typing (not supported in Python 3.8).
 
 
 global _parallel_lock, _logger_lock, _curr_index
@@ -39,14 +39,16 @@ def _init_worker(inner_parallel_lock, inner_logger_lock, inner_curr_index):
     _curr_index = inner_curr_index
 
 
-def _inner_executable(executable: RDSProcessExecutable, *inner_args):
-    global _parallel_lock, _logger_lock, _curr_index
-    controller = RDSProcessController(
-        parallel_lock=_parallel_lock,
-        logger_lock=_logger_lock,
-        curr_index=_curr_index
-    )
-    return executable(controller, *inner_args)  # Inject the controller.
+def _inner_executable(executable: RDSProcessExecutable, add_controller: bool, *inner_args):
+    if add_controller:
+        global _parallel_lock, _logger_lock, _curr_index
+        controller = RDSProcessController(
+            parallel_lock=_parallel_lock,
+            logger_lock=_logger_lock,
+            curr_index=_curr_index
+        )
+        return executable(controller, *inner_args)  # Inject the controller.
+    return executable(*inner_args)
 
 
 class RDSProcessManager(Generic[_R]):
@@ -83,12 +85,14 @@ class RDSProcessManager(Generic[_R]):
     def apply_async(self,
                     executable: RDSProcessExecutable[_R],
                     args: Tuple[Any, ...],  # Typing of this variable might not be correct.
+                    use_controller: bool = True,
                     callback: Union[Callable[[_R], None], None] = None,
                     error_callback: Union[Callable[[Exception], None], None] = None):
         """
         Preserve the given space.
         :param executable: the executable function
         :param args: the arguments to be passed to the executable function
+        :param use_controller: whether to add the controller to the arguments
         :param callback: the callback function to be called after the executable function is finished.
         :param error_callback: the callback function to be called if an error occurs.
         """
@@ -96,7 +100,7 @@ class RDSProcessManager(Generic[_R]):
         # Apply the async function.
         self.pool.apply_async(
             func=_inner_executable,
-            args=(executable, *args),
+            args=(executable, use_controller, *args),
             callback=callback,
             error_callback=error_callback
         )

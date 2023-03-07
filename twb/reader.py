@@ -2,7 +2,7 @@ import os
 from typing import Callable, Union
 import time
 
-from .parallelization import RDSProcessManager, RDSProcessController
+from .parallelization import RDSProcessManager
 from .utils import get_file_list, decompress_zstd
 
 
@@ -60,7 +60,8 @@ class Reader:
         for file in self.files:
             pm.apply_async(
                 executable=_decompress_file,
-                args=(file, output_dir)
+                args=(file, output_dir),
+                use_controller=False
             )
 
         pm.close()
@@ -79,7 +80,7 @@ class Reader:
         pass
 
 
-def _decompress_file(controller: RDSProcessController, path: str, output_dir: str):
+def _decompress_file(path: str, output_dir: str):
     original_name = os.path.split(path)[1]
     decompressed_name = original_name.replace('.zst', '')
     decompressed_path = os.path.join(output_dir, decompressed_name)
