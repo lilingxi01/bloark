@@ -5,12 +5,11 @@ from typing import List, Union, Callable
 import xmltodict
 import py7zr
 import jsonlines
+import uuid
 
 from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
-
-import uuid
 
 
 class Builder:
@@ -128,33 +127,51 @@ def _file_processor(controller: RDSProcessController,
         controller.print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
         return
 
-    controller.print('[Build] >>> Decompressing:', path)
-
     # Get the block interior processor from the running context.
     block_interior_processor = context['processor'] if 'processor' in context else DefaultBIP()
     should_compress = context['compress'] if 'compress' in context else True
     articles_per_block = context['articles_per_block'] if 'articles_per_block' in context else 50
 
+    # Generate a temporary id for the file.
     temp_id = uuid.uuid4().hex
     compression_temp_dir = os.path.join(output_dir, 'compression_temp', temp_id)
     decompression_temp_dir = os.path.join(output_dir, 'decompression_temp', temp_id)
 
+    # If the file does not exist, skip it.
+    if not os.path.exists(path):
+        controller.print(f'[ERROR] File does not exist: {path}')
+        return
+
+    # First try block, catching issues during decompression.
     try:
         # Create temporary directories.
         os.makedirs(compression_temp_dir)
         os.makedirs(decompression_temp_dir)
 
+        # If the temporary directories cannot be created, skip it.
+        if not os.path.exists(compression_temp_dir) or not os.path.exists(decompression_temp_dir):
+            controller.print(f'[ERROR] Failed to create temporary directories for archive: {path}')
+            return
+
         # Decompress the file.
         with py7zr.SevenZipFile(path, mode='r') as z:
+            controller.print('[Build] >>> Decompressing:', path)
             start_time = time.time()
-            z.extractall(path=decompression_temp_dir)
+            z.extractall(path=decompression_temp_dir)  # Decompress the file to temporary directory.
             end_time = time.time()
 
             execution_duration = end_time - start_time
             controller.print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
 
         decompressed_files = get_file_list(decompression_temp_dir)
+    except Exception as e:
+        controller.print(f'[ERROR] Decompression failed: {path}')
+        controller.print(f'[ERROR] >>> Error: {e}')
+        cleanup_dir(decompression_temp_dir)
+        return
 
+    # Second try block, catching issues during processing (XML parsing, etc).
+    try:
         def get_new_output_path():
             """
             Get the path of the next output file.
@@ -202,7 +219,7 @@ def _file_processor(controller: RDSProcessController,
         controller.print(f'[Build] Parsing done. {total_article_count} articles processed in total.'
                          f'(Highest Memory: {max(all_memory_usage_records)} MB)')
 
-        cleanup_dir(decompression_temp_dir)  # Delete temporary files for decompression.
+        cleanup_dir(decompression_temp_dir)  # Delete temporary files used for decompression.
 
         if should_compress:
             # Store the results to JSONL files.
@@ -211,9 +228,8 @@ def _file_processor(controller: RDSProcessController,
             # Compress the files.
             for json_file in json_files:
                 _compress_file(path=json_file, output_dir=output_dir, controller=controller)
-
     except Exception as e:
-        controller.print(f'[ERROR] Decompression failed: {path}')
+        controller.print(f'[ERROR] Parsing failed: {path}')
         controller.print(f'[ERROR] >>> Error: {e}')
     finally:
         # Clean up the temporary directory.
