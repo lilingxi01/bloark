@@ -1,15 +1,36 @@
+import os.path
+import shutil
 from typing import Union, Callable, TypeVar, Tuple, Any, Generic
 from multiprocessing import Manager, Lock, Value, Pool
+
+
+# ========== Global Variables for cross-process communication ==========
+
+
+global _parallel_lock, _logger_lock, _curr_index, _pid_map
+
+
+def _init_worker(inner_parallel_lock, inner_logger_lock, inner_curr_index, pid_map):
+    global _parallel_lock, _logger_lock, _curr_index, _pid_map
+    _parallel_lock = inner_parallel_lock
+    _logger_lock = inner_logger_lock
+    _curr_index = inner_curr_index
+    _pid_map = pid_map
+
+
+# ========== RDS Process Controller ==========
 
 
 class RDSProcessController:
     def __init__(self,
                  parallel_lock: Lock,
                  logger_lock: Lock,
-                 curr_index: Value):
+                 curr_index: Value,
+                 pid_map: dict):
         self.parallel_lock = parallel_lock
         self.logger_lock = logger_lock
         self.curr_index = curr_index
+        self.pid_map = pid_map
 
     def declare_index(self):
         self.parallel_lock.acquire()
@@ -18,10 +39,31 @@ class RDSProcessController:
         self.parallel_lock.release()
         return index
 
+    def register(self, pid: int, temporary_dir: Union[str, None] = None):
+        """
+        Register the process along with its temporary directory path.
+        If the process ID already exists, the previous temporary directory will be deleted in case of disk space safety.
+        :param pid: the process ID
+        :param temporary_dir: the temporary directory path
+        """
+        if pid in self.pid_map:
+            # Cleanup the temporary directory.
+            prev_temporary_dir = self.pid_map[pid]
+            if prev_temporary_dir and os.path.exists(prev_temporary_dir):
+                # Record the existence of the temporary directory, which should be an error.
+                print(f'[ERROR] [UNDELETED] Temporary directory {prev_temporary_dir} is undeleted.')
+                shutil.rmtree(prev_temporary_dir)
+        self.parallel_lock.acquire()
+        self.pid_map[pid] = temporary_dir
+        self.parallel_lock.release()
+
     def print(self, *message: str):
         self.logger_lock.acquire()
         print(*message)
         self.logger_lock.release()
+
+
+# ========== Inner Executable ==========
 
 
 # Generic type for the callable function.
@@ -29,26 +71,20 @@ _R = TypeVar("_R")
 RDSProcessExecutable = Callable[..., _R]  # TODO: Add wild args typing (not supported in Python 3.8).
 
 
-global _parallel_lock, _logger_lock, _curr_index
-
-
-def _init_worker(inner_parallel_lock, inner_logger_lock, inner_curr_index):
-    global _parallel_lock, _logger_lock, _curr_index
-    _parallel_lock = inner_parallel_lock
-    _logger_lock = inner_logger_lock
-    _curr_index = inner_curr_index
-
-
 def _inner_executable(executable: RDSProcessExecutable, add_controller: bool, *inner_args):
     if add_controller:
-        global _parallel_lock, _logger_lock, _curr_index
+        global _parallel_lock, _logger_lock, _curr_index, _pid_map
         controller = RDSProcessController(
             parallel_lock=_parallel_lock,
             logger_lock=_logger_lock,
-            curr_index=_curr_index
+            curr_index=_curr_index,
+            pid_map=_pid_map
         )
         return executable(controller, *inner_args)  # Inject the controller.
     return executable(*inner_args)
+
+
+# ========== RDS Process Manager ==========
 
 
 class RDSProcessManager(Generic[_R]):
@@ -72,6 +108,7 @@ class RDSProcessManager(Generic[_R]):
 
         manager = Manager()
         curr_index = manager.Value('i', start_index)
+        pid_map = manager.dict()
 
         parallel_lock = Lock()
         logger_lock = Lock()
@@ -79,7 +116,7 @@ class RDSProcessManager(Generic[_R]):
         self.pool = Pool(
             processes=final_num_proc,
             initializer=_init_worker,
-            initargs=(parallel_lock, logger_lock, curr_index)
+            initargs=(parallel_lock, logger_lock, curr_index, pid_map)
         )
 
     def apply_async(self,
