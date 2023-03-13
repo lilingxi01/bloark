@@ -36,6 +36,7 @@ class RDSProcessController:
         self.pid_map = pid_map
 
         self.pid = os.getpid()
+        self.loginfo(f'Sub-process initialized.')
 
     def declare_index(self):
         self.parallel_lock.acquire()
@@ -51,19 +52,19 @@ class RDSProcessController:
         self.parallel_lock.release()
         return curr_final_count
 
-    def register(self, pid: int, temporary_dir: Union[str, None] = None):
+    def register(self, temporary_dir: Union[str, None] = None):
         """
         Register the process along with its temporary directory path.
         If the process ID already exists, the previous temporary directory will be deleted in case of disk space safety.
-        :param pid: the process ID
         :param temporary_dir: the temporary directory path
         """
+        pid = self.pid
         if pid in self.pid_map:
             # Cleanup the temporary directory.
             prev_temporary_dir = self.pid_map[pid]
             if prev_temporary_dir and os.path.exists(prev_temporary_dir):
                 # Record the existence of the temporary directory, which should be an error.
-                print(f'[ERROR] [UNDELETED] Temporary directory {prev_temporary_dir} is undeleted.')
+                self.logerr(f'Temporary directory ({prev_temporary_dir}) is undeleted!')
                 shutil.rmtree(prev_temporary_dir)
         self.parallel_lock.acquire()
         self.pid_map[pid] = temporary_dir

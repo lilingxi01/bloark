@@ -141,18 +141,22 @@ def _file_processor(controller: RDSProcessController,
     temp_dir = os.path.join(output_dir, 'temp', temp_id)
     os.makedirs(temp_dir)
 
+    # Register the temporary directory for cleanup previous temporary folders associated with the same pid.
+    controller.register(temp_dir)
+
     # Create the temporary directories for compression and decompression.
     compression_temp_dir = os.path.join(temp_dir, 'compression_temp')
     os.makedirs(compression_temp_dir)
     decompression_temp_dir = os.path.join(temp_dir, 'decompression_temp')
     os.makedirs(decompression_temp_dir)
 
-    very_start_time = time.time()
-
-    # If the temporary directories cannot be created, skip it.
+    # If the temporary directories are not created properly, skip it.
     if not os.path.exists(compression_temp_dir) or not os.path.exists(decompression_temp_dir):
         controller.logerr(f'Failed to create temporary directories for archive: {path}')
         return
+
+    # Log the start time.
+    very_start_time = time.time()
 
     # First try block, catching issues during decompression.
     try:
