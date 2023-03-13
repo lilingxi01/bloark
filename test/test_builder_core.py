@@ -17,7 +17,7 @@ def test_build_no_compress():
     builder.build('./test/output', num_proc=4, compress=False)
 
     for i in range(test_file_count):
-        assert os.path.exists(f'./test/output/block_{str(i).zfill(5)}.jsonl')
+        assert os.path.exists(f'./test/output/block_{str(i).zfill(8)}.jsonl')
 
     shutil.rmtree('./test/output')
 
@@ -28,6 +28,6 @@ def test_build_compressed():
     builder.build('./test/output', num_proc=4, compress=True)
 
     for i in range(test_file_count):
-        assert os.path.exists(f'./test/output/block_{str(i).zfill(5)}.jsonl.zst')
+        assert os.path.exists(f'./test/output/block_{str(i).zfill(8)}.jsonl.zst')
 
     shutil.rmtree('./test/output')

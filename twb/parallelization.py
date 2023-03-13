@@ -35,7 +35,6 @@ class RDSProcessController:
         self.curr_count = curr_count
         self.pid_map = pid_map
 
-        self.pid = os.getpid()
         self.loginfo(f'Sub-process initialized.')
 
     def declare_index(self):
@@ -58,7 +57,7 @@ class RDSProcessController:
         If the process ID already exists, the previous temporary directory will be deleted in case of disk space safety.
         :param temporary_dir: the temporary directory path
         """
-        pid = self.pid
+        pid = os.getpid()
         if pid in self.pid_map:
             # Cleanup the temporary directory.
             prev_temporary_dir = self.pid_map[pid]
@@ -77,14 +76,15 @@ class RDSProcessController:
         :param severity: the severity of the message (info, warning, error)
         """
         self.logger_lock.acquire()
+        pid = str(os.getpid())
         if severity == 'warning':
-            print('[WARNING]', f'{{{self.pid}}}', *message)
+            print('{' + pid + '}', '[WARNING]', *message)
         elif severity == 'error':
-            print('[ERROR]', f'{{{self.pid}}}', *message)
+            print('{' + pid + '}', '[ERROR]', *message)
         elif severity == 'progress':
-            print('[PROGRESS]', f'{{{self.pid}}}', *message)
+            print('{' + pid + '}', '[PROGRESS]', *message)
         else:
-            print('[INFO]', f'{{{self.pid}}}', *message)
+            print('{' + pid + '}', '[INFO]', *message)
         self.logger_lock.release()
 
     def loginfo(self, *message: Any):

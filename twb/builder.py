@@ -82,7 +82,7 @@ class Builder:
         os.makedirs(temp_dir)
 
         # Decompress the files in parallel.
-        print('[Build] Start decompressing files.')
+        print('Start decompressing files.')
 
         process_manager_context = {
             'processor': processor,  # The interior processor for blocks.
@@ -137,12 +137,14 @@ def _file_processor(controller: RDSProcessController,
     # Generate a temporary id for the file.
     temp_id = uuid.uuid4().hex
 
-    # Create the temporary directory for this task (associated with this temp_id).
+    # Compute the path for the temporary directory in this task (associated with this temp_id).
     temp_dir = os.path.join(output_dir, 'temp', temp_id)
-    os.makedirs(temp_dir)
 
     # Register the temporary directory for cleanup previous temporary folders associated with the same pid.
     controller.register(temp_dir)
+
+    # Create the temporary directory.
+    os.makedirs(temp_dir)
 
     # Create the temporary directories for compression and decompression.
     compression_temp_dir = os.path.join(temp_dir, 'compression_temp')
@@ -170,7 +172,7 @@ def _file_processor(controller: RDSProcessController,
         decompressed_files = get_file_list(decompression_temp_dir)
     except Exception as e:
         controller.logerr(f'Decompression failed at {path} with error:', e)
-        cleanup_dir(decompression_temp_dir)
+        cleanup_dir(temp_dir)
         return
 
     # Second try block, catching issues during processing (XML parsing, etc).
@@ -180,7 +182,7 @@ def _file_processor(controller: RDSProcessController,
             Get the path of the next output file.
             """
             nonlocal controller, compression_target_dir
-            curr_index = str(controller.declare_index()).zfill(5)
+            curr_index = str(controller.declare_index()).zfill(8)  # 8 digits in total for scalability.
             return os.path.join(compression_target_dir, f'block_{curr_index}.jsonl')
 
         compression_target_dir = compression_temp_dir if should_compress else output_dir
@@ -235,8 +237,7 @@ def _file_processor(controller: RDSProcessController,
         controller.logerr(f'Parsing failed at {path}:', e)
     finally:
         # Clean up the temporary directory.
-        cleanup_dir(decompression_temp_dir)
-        cleanup_dir(compression_temp_dir)
+        cleanup_dir(temp_dir)
         controller.loginfo(f'Cleaned up folder for temporary ID: {temp_id}')
 
         very_end_time = time.time()
