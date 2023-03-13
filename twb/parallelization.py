@@ -7,14 +7,15 @@ from multiprocessing import Manager, Lock, Value, Pool
 # ========== Global Variables for cross-process communication ==========
 
 
-global _parallel_lock, _logger_lock, _curr_index, _pid_map
+global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
 
 
-def _init_worker(inner_parallel_lock, inner_logger_lock, inner_curr_index, pid_map):
-    global _parallel_lock, _logger_lock, _curr_index, _pid_map
+def _init_worker(inner_parallel_lock, inner_logger_lock, inner_curr_index, inner_curr_count, pid_map):
+    global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
     _parallel_lock = inner_parallel_lock
     _logger_lock = inner_logger_lock
     _curr_index = inner_curr_index
+    _curr_count = inner_curr_count
     _pid_map = pid_map
 
 
@@ -26,11 +27,15 @@ class RDSProcessController:
                  parallel_lock: Lock,
                  logger_lock: Lock,
                  curr_index: Value,
+                 curr_count: Value,
                  pid_map: dict):
         self.parallel_lock = parallel_lock
         self.logger_lock = logger_lock
         self.curr_index = curr_index
+        self.curr_count = curr_count
         self.pid_map = pid_map
+
+        self.pid = os.getpid()
 
     def declare_index(self):
         self.parallel_lock.acquire()
@@ -38,6 +43,13 @@ class RDSProcessController:
         self.curr_index.value += 1
         self.parallel_lock.release()
         return index
+
+    def count_forward(self, count: int = 1) -> int:
+        self.parallel_lock.acquire()
+        self.curr_count.value += count
+        curr_final_count = self.curr_count.value
+        self.parallel_lock.release()
+        return curr_final_count
 
     def register(self, pid: int, temporary_dir: Union[str, None] = None):
         """
@@ -57,10 +69,34 @@ class RDSProcessController:
         self.pid_map[pid] = temporary_dir
         self.parallel_lock.release()
 
-    def print(self, *message: str):
+    def print(self, *message: Any, severity: str = 'info'):
+        """
+        Print the message with the process ID.
+        :param message: the message to be printed
+        :param severity: the severity of the message (info, warning, error)
+        """
         self.logger_lock.acquire()
-        print(*message)
+        if severity == 'warning':
+            print('[WARNING]', f'{{{self.pid}}}', *message)
+        elif severity == 'error':
+            print('[ERROR]', f'{{{self.pid}}}', *message)
+        elif severity == 'progress':
+            print('[PROGRESS]', f'{{{self.pid}}}', *message)
+        else:
+            print('[INFO]', f'{{{self.pid}}}', *message)
         self.logger_lock.release()
+
+    def loginfo(self, *message: Any):
+        self.print(*message, severity='info')
+
+    def logwarn(self, *message: Any):
+        self.print(*message, severity='warning')
+
+    def logerr(self, *message: Any):
+        self.print(*message, severity='error')
+
+    def logprogress(self, *message: Any):
+        self.print(*message, severity='progress')
 
 
 # ========== Inner Executable ==========
@@ -73,11 +109,12 @@ RDSProcessExecutable = Callable[..., _R]  # TODO: Add wild args typing (not supp
 
 def _inner_executable(executable: RDSProcessExecutable, add_controller: bool, *inner_args):
     if add_controller:
-        global _parallel_lock, _logger_lock, _curr_index, _pid_map
+        global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
         controller = RDSProcessController(
             parallel_lock=_parallel_lock,
             logger_lock=_logger_lock,
             curr_index=_curr_index,
+            curr_count=_curr_count,
             pid_map=_pid_map
         )
         return executable(controller, *inner_args)  # Inject the controller.
@@ -95,19 +132,20 @@ class RDSProcessManager(Generic[_R]):
     Deprecation: disk space limitation feature is sunset in v0.2.0 for the sake of simplicity and process security.
     """
     def __init__(self,
-                 num_proc: Union[int, None] = None,
+                 num_proc: Union[int, None] = 1,
                  start_index: int = 0):
         """
-        :param num_proc: the number of processes to be used (default: the number of CPUs)
+        :param num_proc: the number of processes to be used (default: 1) (None: use all available processes)
         :param start_index: the start index of the process
         """
         self.num_proc = num_proc
 
         # For process security, we will use only 1 process if num_proc is None.
-        final_num_proc = num_proc if num_proc is not None else 1
+        final_num_proc = num_proc if num_proc is not None else (os.cpu_count() or 1)
 
         manager = Manager()
         curr_index = manager.Value('i', start_index)
+        curr_count = manager.Value('i', 0)
         pid_map = manager.dict()
 
         parallel_lock = Lock()
@@ -116,7 +154,7 @@ class RDSProcessManager(Generic[_R]):
         self.pool = Pool(
             processes=final_num_proc,
             initializer=_init_worker,
-            initargs=(parallel_lock, logger_lock, curr_index, pid_map)
+            initargs=(parallel_lock, logger_lock, curr_index, curr_count, pid_map)
         )
 
     def apply_async(self,

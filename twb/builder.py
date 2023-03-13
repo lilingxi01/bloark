@@ -50,15 +50,15 @@ class Builder:
     def build(self,
               output_dir: str,
               processor: BlockInteriorProcessor = DefaultBIP(),
-              num_proc: Union[int, None] = None,
-              articles_per_block: int = 50,
+              num_proc: Union[int, None] = 1,
+              articles_per_block: int = 100,
               start_index: int = 0,
               compress: bool = True):
         """
         Build the blocks.
         :param processor: the interior processor for blocks (default: DefaultBIP)
         :param output_dir: the output directory for the blocks (will be created if not exists)
-        :param num_proc: the number of processes (default: number of CPUs)
+        :param num_proc: the number of processes (default: 1) (Set to None to use all available processes)
         :param articles_per_block: the number of articles per block (default: 50)
         :param start_index: the starting index of the blocks (default: 0)
         :param compress: whether to compress the blocks (default: True)
@@ -77,21 +77,18 @@ class Builder:
         # Create the output directory.
         os.makedirs(output_dir)
 
-        # Create the temporary directory for compression.
-        compression_temp_dir = os.path.join(output_dir, 'compression_temp')
-        os.makedirs(compression_temp_dir)
-
-        # Create the temporary directory for decompression.
-        decompression_temp_dir = os.path.join(output_dir, 'decompression_temp')
-        os.makedirs(decompression_temp_dir)
+        # Create the temporary directory.
+        temp_dir = os.path.join(output_dir, 'temp')
+        os.makedirs(temp_dir)
 
         # Decompress the files in parallel.
         print('[Build] Start decompressing files.')
 
         process_manager_context = {
-            'processor': processor,
-            'compress': compress,
-            'articles_per_block': articles_per_block,
+            'processor': processor,  # The interior processor for blocks.
+            'compress': compress,  # Whether to compress the blocks.
+            'articles_per_block': articles_per_block,  # Number of articles per block.
+            'total_count': len(zip_file_list),  # Total number of files to process.
         }
 
         start_time = time.time()
@@ -114,59 +111,61 @@ class Builder:
         print(f"[Build] All done. (Took {execution_duration:.2f} seconds in total)")
 
         # Clean up the temporary directory.
-        cleanup_dir(compression_temp_dir)
-        cleanup_dir(decompression_temp_dir)
+        cleanup_dir(temp_dir)
 
 
 def _file_processor(controller: RDSProcessController,
                     path: str,
                     output_dir: str,
                     context: dict):
+    # If the file does not exist, skip it.
+    if not os.path.exists(path):
+        controller.logerr(f'File does not exist: {path}')
+        return
+
     # If the file is not a 7z file, skip it.
     if not path.endswith('.7z'):
-        controller.print(f'[Build] >>> Skipped because the file is not a 7z file. ({path})')
+        controller.logwarn(f'Skipped because the file is not a 7z file. ({path})')
         return
 
     # Get the block interior processor from the running context.
     block_interior_processor = context['processor'] if 'processor' in context else DefaultBIP()
     should_compress = context['compress'] if 'compress' in context else True
-    articles_per_block = context['articles_per_block'] if 'articles_per_block' in context else 50
+    articles_per_block = context['articles_per_block'] if 'articles_per_block' in context else 100
+    total_count = context['total_count'] if 'total_count' in context else 100
 
     # Generate a temporary id for the file.
     temp_id = uuid.uuid4().hex
-    compression_temp_dir = os.path.join(output_dir, 'compression_temp', temp_id)
-    decompression_temp_dir = os.path.join(output_dir, 'decompression_temp', temp_id)
 
-    # If the file does not exist, skip it.
-    if not os.path.exists(path):
-        controller.print(f'[ERROR] File does not exist: {path}')
+    # Create the temporary directory for this task (associated with this temp_id).
+    temp_dir = os.path.join(output_dir, 'temp', temp_id)
+    os.makedirs(temp_dir)
+
+    # Create the temporary directories for compression and decompression.
+    compression_temp_dir = os.path.join(temp_dir, 'compression_temp')
+    os.makedirs(compression_temp_dir)
+    decompression_temp_dir = os.path.join(temp_dir, 'decompression_temp')
+    os.makedirs(decompression_temp_dir)
+
+    very_start_time = time.time()
+
+    # If the temporary directories cannot be created, skip it.
+    if not os.path.exists(compression_temp_dir) or not os.path.exists(decompression_temp_dir):
+        controller.logerr(f'Failed to create temporary directories for archive: {path}')
         return
 
     # First try block, catching issues during decompression.
     try:
-        # Create temporary directories.
-        os.makedirs(compression_temp_dir)
-        os.makedirs(decompression_temp_dir)
-
-        # If the temporary directories cannot be created, skip it.
-        if not os.path.exists(compression_temp_dir) or not os.path.exists(decompression_temp_dir):
-            controller.print(f'[ERROR] Failed to create temporary directories for archive: {path}')
-            return
-
-        # Decompress the file.
-        with py7zr.SevenZipFile(path, mode='r') as z:
-            controller.print('[Build] >>> Decompressing:', path)
+        # Decompress the file. It has multi-threading support built-in and enabled by default.
+        with py7zr.SevenZipFile(path, mode='r', mp=False) as z:
             start_time = time.time()
-            z.extractall(path=decompression_temp_dir)  # Decompress the file to temporary directory.
+            z.extractall(path=decompression_temp_dir)
             end_time = time.time()
-
             execution_duration = end_time - start_time
-            controller.print(f"[Build] >>> Decompression done: {path} -- {execution_duration:.2f} seconds")
-
+            controller.loginfo(f'Decompression took {execution_duration:.2f} seconds. ({path})')
         decompressed_files = get_file_list(decompression_temp_dir)
     except Exception as e:
-        controller.print(f'[ERROR] Decompression failed: {path}')
-        controller.print(f'[ERROR] >>> Error: {e}')
+        controller.logerr(f'Decompression failed at {path} with error:', e)
         cleanup_dir(decompression_temp_dir)
         return
 
@@ -195,10 +194,7 @@ def _file_processor(controller: RDSProcessController,
             nonlocal total_article_count, article_count, memory_usage_records, curr_output_path
             if article_count >= articles_per_block:
                 # Store the max memory usage in previous batch.
-                max_memory_usage = max(memory_usage_records)
-                all_memory_usage_records.append(max_memory_usage)
-                controller.print(f'[Build] >>> Progress: {total_article_count} articles processed.'
-                                 f'(Output: {curr_output_path}) (Max Memory: {max_memory_usage} MB)')
+                all_memory_usage_records.append(max(memory_usage_records))
                 # Reset the counters.
                 article_count = 0
                 memory_usage_records = []
@@ -216,8 +212,9 @@ def _file_processor(controller: RDSProcessController,
         if len(memory_usage_records) > 0:
             all_memory_usage_records.append(max(memory_usage_records))
 
-        controller.print(f'[Build] Parsing done. {total_article_count} articles processed in total.'
-                         f'(Highest Memory: {max(all_memory_usage_records)} MB)')
+        controller.loginfo(f'Parsing done. {total_article_count} articles processed in total.'
+                           f'{total_article_count / articles_per_block:.2f} blocks created in total.',
+                           f'(Highest Memory: {max(all_memory_usage_records)} MB)')
 
         cleanup_dir(decompression_temp_dir)  # Delete temporary files used for decompression.
 
@@ -228,14 +225,22 @@ def _file_processor(controller: RDSProcessController,
             # Compress the files.
             for json_file in json_files:
                 _compress_file(path=json_file, output_dir=output_dir, controller=controller)
+
+            controller.loginfo(f'Compression done. {len(json_files)} files compressed in total.')
     except Exception as e:
-        controller.print(f'[ERROR] Parsing failed: {path}')
-        controller.print(f'[ERROR] >>> Error: {e}')
+        controller.logerr(f'Parsing failed at {path}:', e)
     finally:
         # Clean up the temporary directory.
         cleanup_dir(decompression_temp_dir)
         cleanup_dir(compression_temp_dir)
-        print(f'[Build] >>> Cleaned up temporary ID: {temp_id}')
+        controller.loginfo(f'Cleaned up folder for temporary ID: {temp_id}')
+
+        very_end_time = time.time()
+        total_execution_duration = very_end_time - very_start_time
+        curr_processed_count = controller.count_forward()
+        curr_processed_progress = curr_processed_count / total_count * 100
+        controller.logprogress(f'({curr_processed_progress:.2f}%) Finished processing {temp_id} @ {path}.',
+                               f'Took {total_execution_duration:.2f} seconds in total for this archive.')
 
 
 def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
@@ -305,21 +310,15 @@ def _compress_file(path: str, output_dir: str, controller: RDSProcessController)
     """
     # If the file is not a JSONL file, skip it.
     if not path.endswith('.jsonl'):
-        controller.print(f'[Build] >>> Skipped because the file is not a JSONL file. ({path})')
+        controller.logwarn(f'Skipped because the file is not a JSONL file. ({path})')
         return
 
     output_path = os.path.join(output_dir, os.path.basename(path) + compression_extension)
 
-    controller.print('[Build] >>> Compressing:', path)
-
-    # Compress the file using Zstandard.
-    start_time = time.time()
-    compress_zstd(input_path=path, output_path=output_path)
-    end_time = time.time()
-    execution_duration = end_time - start_time
-
-    file_size = os.path.getsize(path)  # Get current file size.
-    compressed_file_size = os.path.getsize(output_path)  # Get compressed file size.
-    compression_ratio = compressed_file_size / file_size  # Calculate compression ratio.
-    controller.print(f"[Build] >>> Compression done: {output_path} -- {execution_duration:.2f} seconds"
-                     f"-- {compression_ratio:.2f}x")
+    try:
+        # Compress the file using Zstandard.
+        # TODO: Might be able to specify multiprocessing or multithreading. Check the documentation.
+        #  If possible, we should use multithreading in order to utilize the CPU cores in this case.
+        compress_zstd(input_path=path, output_path=output_path)
+    except Exception as e:
+        controller.logerr(f'Compression failed at {path}:', e)
