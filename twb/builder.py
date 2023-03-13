@@ -1,3 +1,4 @@
+import math
 import os
 import shutil
 import time
@@ -82,7 +83,7 @@ class Builder:
         os.makedirs(temp_dir)
 
         # Decompress the files in parallel.
-        print('Start decompressing files.')
+        print('Starting RDS process manager...')
 
         process_manager_context = {
             'processor': processor,  # The interior processor for blocks.
@@ -108,7 +109,7 @@ class Builder:
 
         end_time = time.time()
         execution_duration = end_time - start_time
-        print(f"[Build] All done. (Took {execution_duration:.2f} seconds in total)")
+        print(f"!!! All done. (Took {execution_duration:.2f} seconds in total)")
 
         # Clean up the temporary directory.
         cleanup_dir(temp_dir)
@@ -120,7 +121,7 @@ def _file_processor(controller: RDSProcessController,
                     context: dict):
     # If the file does not exist, skip it.
     if not os.path.exists(path):
-        controller.logerr(f'File does not exist: {path}')
+        controller.logfatal(f'File does not exist: {path}')
         return
 
     # If the file is not a 7z file, skip it.
@@ -154,7 +155,7 @@ def _file_processor(controller: RDSProcessController,
 
     # If the temporary directories are not created properly, skip it.
     if not os.path.exists(compression_temp_dir) or not os.path.exists(decompression_temp_dir):
-        controller.logerr(f'Failed to create temporary directories for archive: {path}')
+        controller.logfatal(f'Failed to create temporary directories for archive: {path}')
         return
 
     # Log the start time.
@@ -168,7 +169,8 @@ def _file_processor(controller: RDSProcessController,
             z.extractall(path=decompression_temp_dir)
             end_time = time.time()
             execution_duration = end_time - start_time
-            controller.loginfo(f'Decompression took {execution_duration:.2f} seconds. ({path})')
+            archive_filename = os.path.basename(path)
+            controller.logdebug(f'Decompression took {execution_duration:.2f} seconds. ({archive_filename})')
         decompressed_files = get_file_list(decompression_temp_dir)
     except Exception as e:
         controller.logerr(f'Decompression failed at {path} with error:', e)
@@ -218,9 +220,9 @@ def _file_processor(controller: RDSProcessController,
         if len(memory_usage_records) > 0:
             all_memory_usage_records.append(max(memory_usage_records))
 
-        controller.loginfo(f'Parsing done. {total_article_count} articles processed in total.'
-                           f'{total_article_count / articles_per_block:.2f} blocks created in total.',
-                           f'(Highest Memory: {max(all_memory_usage_records)} MB)')
+        controller.logdebug(f'Parsing done. {total_article_count} articles processed.',
+                            f'{math.ceil(total_article_count / articles_per_block)} blocks created.',
+                            f'(Highest Memory: {max(all_memory_usage_records)} MB)')
 
         cleanup_dir(decompression_temp_dir)  # Delete temporary files used for decompression.
 
@@ -232,20 +234,19 @@ def _file_processor(controller: RDSProcessController,
             for json_file in json_files:
                 _compress_file(path=json_file, output_dir=output_dir, controller=controller)
 
-            controller.loginfo(f'Compression done. {len(json_files)} files compressed in total.')
+            controller.logdebug(f'Compression done. {len(json_files)} files compressed in total.')
     except Exception as e:
         controller.logerr(f'Parsing failed at {path}:', e)
     finally:
         # Clean up the temporary directory.
         cleanup_dir(temp_dir)
-        controller.loginfo(f'Cleaned up folder for temporary ID: {temp_id}')
 
         very_end_time = time.time()
         total_execution_duration = very_end_time - very_start_time
         curr_processed_count = controller.count_forward()
         curr_processed_progress = curr_processed_count / total_count * 100
-        controller.logprogress(f'({curr_processed_progress:.2f}%) Finished processing {temp_id} @ {path}.',
-                               f'Took {total_execution_duration:.2f} seconds in total for this archive.')
+        controller.loginfo(f'({curr_processed_progress:.2f}%) Finished processing {temp_id} @ {archive_filename}.',
+                           f'(Took {total_execution_duration:.2f}s)')
 
 
 def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):

@@ -1,3 +1,4 @@
+import logging
 import os.path
 import shutil
 from typing import Union, Callable, TypeVar, Tuple, Any, Generic
@@ -35,7 +36,8 @@ class RDSProcessController:
         self.curr_count = curr_count
         self.pid_map = pid_map
 
-        self.loginfo(f'Sub-process initialized.')
+        logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s {%(process)d} %(levelname)s] %(message)s')
+        self.logdebug(f'Process initialized.')
 
     def declare_index(self):
         self.parallel_lock.acquire()
@@ -65,9 +67,7 @@ class RDSProcessController:
                 # Record the existence of the temporary directory, which should be an error.
                 self.logerr(f'Temporary directory ({prev_temporary_dir}) is undeleted!')
                 shutil.rmtree(prev_temporary_dir)
-        self.parallel_lock.acquire()
         self.pid_map[pid] = temporary_dir
-        self.parallel_lock.release()
 
     def print(self, *message: Any, severity: str = 'info'):
         """
@@ -76,16 +76,21 @@ class RDSProcessController:
         :param severity: the severity of the message (info, warning, error)
         """
         self.logger_lock.acquire()
-        pid = str(os.getpid())
+        printable_content = ' '.join([str(m) for m in message])
         if severity == 'warning':
-            print('{' + pid + '}', '[WARNING]', *message)
+            logging.warning(printable_content)
         elif severity == 'error':
-            print('{' + pid + '}', '[ERROR]', *message)
-        elif severity == 'progress':
-            print('{' + pid + '}', '[PROGRESS]', *message)
+            logging.error(printable_content)
+        elif severity == 'fatal':
+            logging.critical(printable_content)
+        elif severity == 'info':
+            logging.info(printable_content)
         else:
-            print('{' + pid + '}', '[INFO]', *message)
+            logging.debug(printable_content)
         self.logger_lock.release()
+
+    def logdebug(self, *message: Any):
+        self.print(*message, severity='debug')
 
     def loginfo(self, *message: Any):
         self.print(*message, severity='info')
@@ -96,8 +101,8 @@ class RDSProcessController:
     def logerr(self, *message: Any):
         self.print(*message, severity='error')
 
-    def logprogress(self, *message: Any):
-        self.print(*message, severity='progress')
+    def logfatal(self, *message: Any):
+        self.print(*message, severity='fatal')
 
 
 # ========== Inner Executable ==========
