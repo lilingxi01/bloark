@@ -29,14 +29,27 @@ class RDSProcessController:
                  logger_lock: Lock,
                  curr_index: Value,
                  curr_count: Value,
-                 pid_map: dict):
+                 pid_map: dict,
+                 log_dir: Union[str, None]):
         self.parallel_lock = parallel_lock
         self.logger_lock = logger_lock
         self.curr_index = curr_index
         self.curr_count = curr_count
         self.pid_map = pid_map
 
-        logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s {%(process)d} %(levelname)s] %(message)s')
+        log_handlers = [logging.StreamHandler()]
+
+        if log_dir is not None:
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, 'process.log')
+            log_handlers.append(logging.FileHandler(filename=log_path, mode='a'))
+
+        # TODO: Might want to use logger instance instead of logging.basicConfig.
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='[%(asctime)s (%(process)d) %(levelname)s] %(message)s',
+            handlers=log_handlers
+        )
         self.logdebug(f'Process initialized.')
 
     def declare_index(self):
@@ -113,7 +126,7 @@ _R = TypeVar("_R")
 RDSProcessExecutable = Callable[..., _R]  # TODO: Add wild args typing (not supported in Python 3.8).
 
 
-def _inner_executable(executable: RDSProcessExecutable, add_controller: bool, *inner_args):
+def _inner_executable(executable: RDSProcessExecutable, add_controller: bool, log_dir: Union[str, None], *inner_args):
     if add_controller:
         global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
         controller = RDSProcessController(
@@ -121,7 +134,8 @@ def _inner_executable(executable: RDSProcessExecutable, add_controller: bool, *i
             logger_lock=_logger_lock,
             curr_index=_curr_index,
             curr_count=_curr_count,
-            pid_map=_pid_map
+            pid_map=_pid_map,
+            log_dir=log_dir
         )
         return executable(controller, *inner_args)  # Inject the controller.
     return executable(*inner_args)
@@ -139,15 +153,21 @@ class RDSProcessManager(Generic[_R]):
     """
     def __init__(self,
                  num_proc: Union[int, None] = 1,
+                 log_dir: Union[str, None] = None,
                  start_index: int = 0):
         """
         :param num_proc: the number of processes to be used (default: 1) (None: use all available processes)
+        :param log_dir: the dir to the log file (default: None)
         :param start_index: the start index of the process
         """
         self.num_proc = num_proc
+        self.log_dir = log_dir
 
         # For process security, we will use only 1 process if num_proc is None.
         final_num_proc = num_proc if num_proc is not None else (os.cpu_count() or 1)
+
+        if log_dir is not None and os.path.exists(log_dir):
+            shutil.rmtree(log_dir)
 
         manager = Manager()
         curr_index = manager.Value('i', start_index)
@@ -181,7 +201,7 @@ class RDSProcessManager(Generic[_R]):
         # Apply the async function.
         self.pool.apply_async(
             func=_inner_executable,
-            args=(executable, use_controller, *args),
+            args=(executable, use_controller, self.log_dir, *args),
             callback=callback,
             error_callback=error_callback
         )

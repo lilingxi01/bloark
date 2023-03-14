@@ -50,18 +50,20 @@ class Builder:
 
     def build(self,
               output_dir: str,
-              processor: BlockInteriorProcessor = DefaultBIP(),
+              log_dir: Union[str, None] = None,
               num_proc: Union[int, None] = 1,
               articles_per_block: int = 100,
               start_index: int = 0,
+              processor: BlockInteriorProcessor = DefaultBIP(),
               compress: bool = True):
         """
         Build the blocks.
-        :param processor: the interior processor for blocks (default: DefaultBIP)
         :param output_dir: the output directory for the blocks (will be created if not exists)
+        :param log_dir: the dir to the log file (default: None) (Will be cleaned up if exists)
         :param num_proc: the number of processes (default: 1) (Set to None to use all available processes)
-        :param articles_per_block: the number of articles per block (default: 50)
+        :param articles_per_block: the number of articles per block (default: 100)
         :param start_index: the starting index of the blocks (default: 0)
+        :param processor: the interior processor for blocks (default: DefaultBIP)
         :param compress: whether to compress the blocks (default: True)
         :raise Warning: if there is no file to process
         """
@@ -96,7 +98,8 @@ class Builder:
 
         pm = RDSProcessManager(
             num_proc=num_proc,
-            start_index=start_index,
+            log_dir=log_dir,
+            start_index=start_index
         )
         for path in zip_file_list:
             pm.apply_async(
@@ -240,13 +243,14 @@ def _file_processor(controller: RDSProcessController,
     finally:
         # Clean up the temporary directory.
         cleanup_dir(temp_dir)
+        controller.logdebug(f'Temporary directory cleaned up: {temp_id}.')
 
         very_end_time = time.time()
         total_execution_duration = very_end_time - very_start_time
         curr_processed_count = controller.count_forward()
         curr_processed_progress = curr_processed_count / total_count * 100
-        controller.loginfo(f'({curr_processed_progress:.2f}%) Finished processing {temp_id} @ {archive_filename}.',
-                           f'(Took {total_execution_duration:.2f}s)')
+        controller.loginfo(f'({curr_processed_progress:.2f}%) Done: {archive_filename}.',
+                           f'({total_execution_duration:.2f}s)')
 
 
 def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
