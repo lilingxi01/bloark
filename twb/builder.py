@@ -1,4 +1,4 @@
-import math
+import logging
 import os
 import shutil
 import time
@@ -11,6 +11,12 @@ import uuid
 from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
+
+
+_DEFAULT_REVISIONS_PER_BLOCK = 300000
+_DEFAULT_START_INDEX = 0
+_DEFAULT_NUM_PROC = 1
+_DEFAULT_LOG_LEVEL = logging.DEBUG
 
 
 class Builder:
@@ -51,9 +57,10 @@ class Builder:
     def build(self,
               output_dir: str,
               log_dir: Union[str, None] = None,
-              num_proc: Union[int, None] = 1,
-              articles_per_block: int = 100,
-              start_index: int = 0,
+              num_proc: Union[int, None] = _DEFAULT_NUM_PROC,
+              revisions_per_block: int = _DEFAULT_REVISIONS_PER_BLOCK,
+              start_index: int = _DEFAULT_START_INDEX,
+              log_level: int = _DEFAULT_LOG_LEVEL,
               processor: BlockInteriorProcessor = DefaultBIP(),
               compress: bool = True):
         """
@@ -61,8 +68,9 @@ class Builder:
         :param output_dir: the output directory for the blocks (will be created if not exists)
         :param log_dir: the dir to the log file (default: None) (Will be cleaned up if exists)
         :param num_proc: the number of processes (default: 1) (Set to None to use all available processes)
-        :param articles_per_block: the number of articles per block (default: 100)
+        :param revisions_per_block: the number of revisions per block (default: 300000)
         :param start_index: the starting index of the blocks (default: 0)
+        :param log_level: the log level (default: logging.DEBUG)
         :param processor: the interior processor for blocks (default: DefaultBIP)
         :param compress: whether to compress the blocks (default: True)
         :raise Warning: if there is no file to process
@@ -90,7 +98,7 @@ class Builder:
         process_manager_context = {
             'processor': processor,  # The interior processor for blocks.
             'compress': compress,  # Whether to compress the blocks.
-            'articles_per_block': articles_per_block,  # Number of articles per block.
+            'revisions_per_block': revisions_per_block,  # Number of revisions per block.
             'total_count': len(zip_file_list),  # Total number of files to process.
         }
 
@@ -99,6 +107,7 @@ class Builder:
         pm = RDSProcessManager(
             num_proc=num_proc,
             log_dir=log_dir,
+            log_level=log_level,
             start_index=start_index
         )
         for path in zip_file_list:
@@ -133,10 +142,10 @@ def _file_processor(controller: RDSProcessController,
         return
 
     # Get the block interior processor from the running context.
-    block_interior_processor = context['processor'] if 'processor' in context else DefaultBIP()
-    should_compress = context['compress'] if 'compress' in context else True
-    articles_per_block = context['articles_per_block'] if 'articles_per_block' in context else 100
-    total_count = context['total_count'] if 'total_count' in context else 100
+    block_interior_processor = context.get('processor', DefaultBIP())
+    should_compress = context.get('compress', True)
+    revisions_per_block = context.get('revisions_per_block', _DEFAULT_REVISIONS_PER_BLOCK)
+    total_count = context.get('total_count', 0)
 
     # Generate a temporary id for the file.
     temp_id = uuid.uuid4().hex
@@ -193,26 +202,47 @@ def _file_processor(controller: RDSProcessController,
         compression_target_dir = compression_temp_dir if should_compress else output_dir
 
         total_article_count = 0
-        article_count = 0
+        total_block_count = 1
+        total_revision_count = 0
+
+        revision_count = 0
         memory_usage_records = []
         all_memory_usage_records = []
         curr_output_path = get_new_output_path()
 
         def _super_callback(article: dict):
             """
-            The super callback for the XML parser.
+            The super callback for the XML parser. It will be called recursively for each article.
             """
-            nonlocal total_article_count, article_count, memory_usage_records, curr_output_path
-            if article_count >= articles_per_block:
+            nonlocal total_article_count, total_block_count, total_revision_count
+            nonlocal revision_count, memory_usage_records, all_memory_usage_records, curr_output_path
+
+            # If previous batch is full, store the max memory usage and reset the counters.
+            if revision_count >= revisions_per_block:
                 # Store the max memory usage in previous batch.
                 all_memory_usage_records.append(max(memory_usage_records))
+                # Update the block count.
+                total_block_count += 1
                 # Reset the counters.
-                article_count = 0
+                revision_count = 0
                 memory_usage_records = []
                 curr_output_path = get_new_output_path()
-            article_count += 1
+
+            # Compute the number of revisions in the current article.
+            if 'revision' in article and type(article['revision']) is list:
+                curr_article_revision_count = len(article['revision'])
+            else:
+                curr_article_revision_count = 1
+
+            # Update the counters.
+            revision_count += curr_article_revision_count
+            total_revision_count += curr_article_revision_count
             total_article_count += 1
+
+            # Store the article into the current output file.
             _store_article_to_jsonl(article=article, output_path=curr_output_path)
+
+            # Record the memory usage.
             memory_usage_records.append(get_memory_consumption())
 
         # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
@@ -224,7 +254,7 @@ def _file_processor(controller: RDSProcessController,
             all_memory_usage_records.append(max(memory_usage_records))
 
         controller.logdebug(f'Parsing done. {total_article_count} articles processed.',
-                            f'{math.ceil(total_article_count / articles_per_block)} blocks created.',
+                            f'({total_revision_count} revisions are processed into {total_block_count} blocks)',
                             f'(Highest Memory: {max(all_memory_usage_records)} MB)')
 
         cleanup_dir(decompression_temp_dir)  # Delete temporary files used for decompression.
@@ -248,7 +278,7 @@ def _file_processor(controller: RDSProcessController,
         very_end_time = time.time()
         total_execution_duration = very_end_time - very_start_time
         curr_processed_count = controller.count_forward()
-        curr_processed_progress = curr_processed_count / total_count * 100
+        curr_processed_progress = curr_processed_count / total_count * 100 if total_count > 0 else -1
         controller.loginfo(f'({curr_processed_progress:.2f}%) Done: {archive_filename}.',
                            f'({total_execution_duration:.2f}s)')
 
