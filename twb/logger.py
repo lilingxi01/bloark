@@ -24,11 +24,16 @@ def _get_logger_file_handler(log_dir: str) -> Union[logging.FileHandler, None]:
     return None
 
 
-def universal_logger_init(log_dir: str, log_level: int = logging.DEBUG) -> logging.Logger:
+def universal_logger_init(log_dir: str, log_level: int = logging.DEBUG):
     stream_handler = _get_logger_stream_handler()
     file_handler = _get_logger_file_handler(log_dir=log_dir)
 
     logger = logging.getLogger()
+
+    # Clean up any existing handlers in default logger.
+    while logger.hasHandlers():
+        logger.removeHandler(logger.handlers[0])
+
     logger.setLevel(log_level)
     logger.addHandler(stream_handler)
     if file_handler is not None:
@@ -41,10 +46,13 @@ def mp_logger_init(log_dir: str, log_level: int = logging.DEBUG) -> (QueueListen
     stream_handler = _get_logger_stream_handler()
     file_handler = _get_logger_file_handler(log_dir=log_dir)
 
-    ql = QueueListener(q, stream_handler, file_handler)
+    if file_handler is not None:
+        ql = QueueListener(q, stream_handler, file_handler)
+    else:
+        ql = QueueListener(q, stream_handler)
     ql.start()
 
-    logger = logging.getLogger()
+    logger = logging.getLogger('mp_parent_logger')  # Use a different name to avoid conflict with the default logger.
     logger.setLevel(log_level)
 
     logger.addHandler(stream_handler)

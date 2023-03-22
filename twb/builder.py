@@ -89,11 +89,6 @@ class Builder:
         if os.path.exists(output_dir):
             shutil.rmtree(output_dir)
 
-        # If process log exists, remove it first.
-        if os.path.exists(os.path.join(log_dir, 'process.log')):
-            os.remove(os.path.join(log_dir, 'process.log'))
-            logging.info('Removed the process log file.')
-
         # Create the output directory.
         os.makedirs(output_dir)
 
@@ -114,7 +109,7 @@ class Builder:
         curr_count = 0
         total_count = len(zip_file_list)
 
-        def _success_callback():
+        def _success_callback(result):
             nonlocal curr_count
             curr_count += 1
             curr_processed_progress = curr_count / total_count * 100 if total_count > 0 else -1
@@ -122,7 +117,7 @@ class Builder:
 
         def _error_callback(e):
             logging.error('An error occurred in a sub-process which makes it terminated.',
-                          'Check next error log for details.')
+                                   'Check next error log for details.')
             logging.error(e)
 
             nonlocal curr_count

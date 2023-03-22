@@ -10,16 +10,17 @@ from twb.logger import mp_logger_init
 # ========== Global Variables for cross-process communication ==========
 
 
-global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
+global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map, _active_pids
 
 
-def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, inner_curr_count, pid_map):
-    global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
+def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, inner_curr_count, pid_map, active_pids):
+    global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map, _active_pids
     _parallel_lock = inner_parallel_lock
     _logger_lock = inner_logger_lock
     _curr_index = inner_curr_index
     _curr_count = inner_curr_count
     _pid_map = pid_map
+    _active_pids = active_pids
 
     # Initialize the logger within the sub-process.
     qh = QueueHandler(q)
@@ -37,12 +38,16 @@ class RDSProcessController:
                  logger_lock: Lock,
                  curr_index: Value,
                  curr_count: Value,
-                 pid_map: dict):
+                 pid_map: dict,
+                 active_pids: list,
+                 num_proc: int):
         self.parallel_lock = parallel_lock
         self.logger_lock = logger_lock
         self.curr_index = curr_index
         self.curr_count = curr_count
         self.pid_map = pid_map
+        self.active_pids = active_pids
+        self.num_proc = num_proc
 
         self.logdebug(f'Process initialized.')
 
@@ -75,6 +80,34 @@ class RDSProcessController:
                 self.logerr(f'Temporary directory ({prev_temporary_dir}) is undeleted!')
                 shutil.rmtree(prev_temporary_dir)
         self.pid_map[pid] = temporary_dir
+
+        # Count the number of inactive processes being removed. (for logging)
+        inactive_count = 0
+
+        self.parallel_lock.acquire()
+
+        # We initialize the active process list count when the number of possible processes exceeds the desired
+        # number of processes or when we are already counting the number of active processes.
+        if len(self.active_pids) > 0 or len(self.pid_map.keys()) > self.num_proc:
+            if pid in self.active_pids:
+                self.active_pids.remove(pid)
+            self.active_pids.append(pid)
+
+            # Remove the inactive processes when the number of active processes reaches the desired number.
+            if len(self.active_pids) >= self.num_proc:
+                inactive_pids = set(self.pid_map.keys()) - set(self.active_pids)
+                for pid in inactive_pids:
+                    temp_folder = self.pid_map[pid]
+                    if os.path.exists(temp_folder):
+                        inactive_count += 1
+                        shutil.rmtree(temp_folder)  # Remove the temporary directory under parallel lock.
+                    del self.pid_map[pid]
+                self.active_pids.clear()  # Clear the active process list for preparation of the next possible leak.
+
+        self.parallel_lock.release()
+
+        if inactive_count > 0:
+            self.loginfo(f'Removed {inactive_count} inactive processes.')
 
     def print(self, *message: Any, severity: str = 'info'):
         """
@@ -122,15 +155,18 @@ RDSProcessExecutable = Callable[..., _R]  # TODO: Add wild args typing (not supp
 
 def _inner_executable(executable: RDSProcessExecutable,
                       add_controller: bool,
+                      num_proc: int,
                       *inner_args):
     if add_controller:
-        global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
+        global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map, _active_pids
         controller = RDSProcessController(
             parallel_lock=_parallel_lock,
             logger_lock=_logger_lock,
             curr_index=_curr_index,
             curr_count=_curr_count,
             pid_map=_pid_map,
+            active_pids=_active_pids,
+            num_proc=num_proc
         )
         return executable(controller, *inner_args)  # Inject the controller.
     return executable(*inner_args)
@@ -174,6 +210,7 @@ class RDSProcessManager(Generic[_R]):
         curr_index = manager.Value('i', start_index)
         curr_count = manager.Value('i', 0)
         pid_map = manager.dict()
+        active_pids = manager.list()
 
         parallel_lock = Lock()
         logger_lock = Lock()
@@ -181,7 +218,7 @@ class RDSProcessManager(Generic[_R]):
         self.pool = Pool(
             processes=final_num_proc,
             initializer=_init_worker,
-            initargs=(q, parallel_lock, logger_lock, curr_index, curr_count, pid_map)
+            initargs=(q, parallel_lock, logger_lock, curr_index, curr_count, pid_map, active_pids)
         )
 
     def apply_async(self,
@@ -202,7 +239,7 @@ class RDSProcessManager(Generic[_R]):
         # Apply the async function.
         self.pool.apply_async(
             func=_inner_executable,
-            args=(executable, use_controller, *args),
+            args=(executable, use_controller, self.num_proc, *args),
             callback=callback,
             error_callback=error_callback
         )
@@ -220,7 +257,6 @@ class RDSProcessManager(Generic[_R]):
         """
         self.pool.join()
         self.queue_listener.stop()
-        self.terminate()
 
     def terminate(self):
         """

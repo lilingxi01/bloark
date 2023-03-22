@@ -168,7 +168,11 @@ class WikiHistoryDumpDownloadProfile(DownloadProfile):
 
     root_url = 'https://dumps.wikimedia.org'
     master_url = 'https://dumps.wikimedia.org/enwiki/'
-    latest_dump_date = '20221201'
+
+    # Update this variable whenever the latest dump data is changed. Check `master_url` for the latest date.
+    # Pick the date that is the closest to the current date AND must have the 7z history dump (some latest dates
+    # do not have it).
+    latest_dump_date = '20230301'
 
     def get_url_batches(self, context: dict) -> List[str]:
         urls = []
