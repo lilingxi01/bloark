@@ -1,9 +1,11 @@
 import logging
 import os.path
 import shutil
+from logging.handlers import QueueHandler
 from typing import Union, Callable, TypeVar, Tuple, Any, Generic
 from multiprocessing import Manager, Lock, Value, Pool
 
+from twb.logger import mp_logger_init
 
 # ========== Global Variables for cross-process communication ==========
 
@@ -11,13 +13,19 @@ from multiprocessing import Manager, Lock, Value, Pool
 global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
 
 
-def _init_worker(inner_parallel_lock, inner_logger_lock, inner_curr_index, inner_curr_count, pid_map):
+def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, inner_curr_count, pid_map):
     global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
     _parallel_lock = inner_parallel_lock
     _logger_lock = inner_logger_lock
     _curr_index = inner_curr_index
     _curr_count = inner_curr_count
     _pid_map = pid_map
+
+    # Initialize the logger within the sub-process.
+    qh = QueueHandler(q)
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(qh)
 
 
 # ========== RDS Process Controller ==========
@@ -29,28 +37,13 @@ class RDSProcessController:
                  logger_lock: Lock,
                  curr_index: Value,
                  curr_count: Value,
-                 pid_map: dict,
-                 log_dir: Union[str, None],
-                 log_level: int = logging.DEBUG):
+                 pid_map: dict):
         self.parallel_lock = parallel_lock
         self.logger_lock = logger_lock
         self.curr_index = curr_index
         self.curr_count = curr_count
         self.pid_map = pid_map
 
-        log_handlers = [logging.StreamHandler()]
-
-        if log_dir is not None:
-            os.makedirs(log_dir, exist_ok=True)
-            log_path = os.path.join(log_dir, 'process.log')
-            log_handlers.append(logging.FileHandler(filename=log_path, mode='a'))
-
-        # TODO: Might want to use logger instance instead of logging.basicConfig.
-        logging.basicConfig(
-            level=log_level,
-            format='[%(asctime)s (%(process)d) %(levelname)s] %(message)s',
-            handlers=log_handlers
-        )
         self.logdebug(f'Process initialized.')
 
     def declare_index(self):
@@ -129,8 +122,6 @@ RDSProcessExecutable = Callable[..., _R]  # TODO: Add wild args typing (not supp
 
 def _inner_executable(executable: RDSProcessExecutable,
                       add_controller: bool,
-                      log_dir: Union[str, None],
-                      log_level: int,
                       *inner_args):
     if add_controller:
         global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map
@@ -140,8 +131,6 @@ def _inner_executable(executable: RDSProcessExecutable,
             curr_index=_curr_index,
             curr_count=_curr_count,
             pid_map=_pid_map,
-            log_dir=log_dir,
-            log_level=log_level
         )
         return executable(controller, *inner_args)  # Inject the controller.
     return executable(*inner_args)
@@ -178,6 +167,9 @@ class RDSProcessManager(Generic[_R]):
         if log_dir is not None and os.path.exists(log_dir):
             shutil.rmtree(log_dir)
 
+        ql, q = mp_logger_init(log_dir=log_dir, log_level=log_level)
+        self.queue_listener = ql  # Will need to stop it in the end.
+
         manager = Manager()
         curr_index = manager.Value('i', start_index)
         curr_count = manager.Value('i', 0)
@@ -189,7 +181,7 @@ class RDSProcessManager(Generic[_R]):
         self.pool = Pool(
             processes=final_num_proc,
             initializer=_init_worker,
-            initargs=(parallel_lock, logger_lock, curr_index, curr_count, pid_map)
+            initargs=(q, parallel_lock, logger_lock, curr_index, curr_count, pid_map)
         )
 
     def apply_async(self,
@@ -210,7 +202,7 @@ class RDSProcessManager(Generic[_R]):
         # Apply the async function.
         self.pool.apply_async(
             func=_inner_executable,
-            args=(executable, use_controller, self.log_dir, self.log_level, *args),
+            args=(executable, use_controller, *args),
             callback=callback,
             error_callback=error_callback
         )
@@ -224,8 +216,11 @@ class RDSProcessManager(Generic[_R]):
     def join(self):
         """
         [RDS-PM] Wait for all the tasks to be finished.
+        Will terminate the problematic pool after all the tasks are done.
         """
         self.pool.join()
+        self.queue_listener.stop()
+        self.terminate()
 
     def terminate(self):
         """

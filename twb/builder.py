@@ -8,6 +8,7 @@ import py7zr
 import jsonlines
 import uuid
 
+from .logger import universal_logger_init
 from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
@@ -77,6 +78,9 @@ class Builder:
         """
         zip_file_list = self.files
 
+        # Initialize the logger.
+        universal_logger_init(log_dir=log_dir, log_level=log_level)
+
         # If there is no file to process, raise a warning and return.
         if len(zip_file_list) == 0:
             raise Warning('There is no file to process.')
@@ -84,6 +88,11 @@ class Builder:
         # If output dir exists, remove it first.
         if os.path.exists(output_dir):
             shutil.rmtree(output_dir)
+
+        # If process log exists, remove it first.
+        if os.path.exists(os.path.join(log_dir, 'process.log')):
+            os.remove(os.path.join(log_dir, 'process.log'))
+            logging.info('Removed the process log file.')
 
         # Create the output directory.
         os.makedirs(output_dir)
@@ -93,7 +102,7 @@ class Builder:
         os.makedirs(temp_dir)
 
         # Decompress the files in parallel.
-        print('Starting RDS process manager...')
+        logging.info('Starting RDS process manager...')
 
         process_manager_context = {
             'processor': processor,  # The interior processor for blocks.
@@ -101,6 +110,25 @@ class Builder:
             'revisions_per_block': revisions_per_block,  # Number of revisions per block.
             'total_count': len(zip_file_list),  # Total number of files to process.
         }
+
+        curr_count = 0
+        total_count = len(zip_file_list)
+
+        def _success_callback():
+            nonlocal curr_count
+            curr_count += 1
+            curr_processed_progress = curr_count / total_count * 100 if total_count > 0 else -1
+            logging.info(f'{curr_count} / {total_count} ==> ({curr_processed_progress:.2f}%)')
+
+        def _error_callback(e):
+            logging.error('An error occurred in a sub-process which makes it terminated.',
+                          'Check next error log for details.')
+            logging.error(e)
+
+            nonlocal curr_count
+            curr_count += 1
+            curr_processed_progress = curr_count / total_count * 100 if total_count > 0 else -1
+            logging.info(f'{curr_count} / {total_count} ==> ({curr_processed_progress:.2f}%) (Terminated)')
 
         start_time = time.time()
 
@@ -113,7 +141,9 @@ class Builder:
         for path in zip_file_list:
             pm.apply_async(
                 executable=_file_processor,
-                args=(path, output_dir, process_manager_context)
+                args=(path, output_dir, process_manager_context),
+                callback=_success_callback,
+                error_callback=_error_callback,
             )
 
         pm.close()
@@ -121,7 +151,7 @@ class Builder:
 
         end_time = time.time()
         execution_duration = end_time - start_time
-        print(f"!!! All done. (Took {execution_duration:.2f} seconds in total)")
+        logging.info(f"!!! All done. (Took {execution_duration:.2f} seconds in total)")
 
         # Clean up the temporary directory.
         cleanup_dir(temp_dir)
@@ -277,10 +307,7 @@ def _file_processor(controller: RDSProcessController,
 
         very_end_time = time.time()
         total_execution_duration = very_end_time - very_start_time
-        curr_processed_count = controller.count_forward()
-        curr_processed_progress = curr_processed_count / total_count * 100 if total_count > 0 else -1
-        controller.loginfo(f'({curr_processed_progress:.2f}%) Done: {archive_filename}.',
-                           f'({total_execution_duration:.2f}s)')
+        controller.loginfo(f'File done: {archive_filename}. (Duration: {total_execution_duration:.2f}s)')
 
 
 def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
