@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import time
 from typing import Union
 
@@ -56,6 +57,10 @@ class Decompressor:
         :param log_dir: the dir to the log file (default: None)
         :param log_level: the log level (default: logging.INFO)
         """
+
+        # If log dir exists, remove it first.
+        if log_dir is not None and os.path.exists(log_dir):
+            shutil.rmtree(log_dir)
 
         universal_logger_init(log_dir=log_dir, log_level=log_level)
 

@@ -78,6 +78,10 @@ class Builder:
         """
         zip_file_list = self.files
 
+        # If log dir exists, remove it first.
+        if log_dir is not None and os.path.exists(log_dir):
+            shutil.rmtree(log_dir)
+
         # Initialize the logger.
         universal_logger_init(log_dir=log_dir, log_level=log_level)
 

@@ -1,8 +1,9 @@
 import multiprocessing as mp
 import os
 import logging
-from logging.handlers import QueueListener
+from logging.handlers import QueueListener, QueueHandler
 from typing import Union
+
 
 _log_format = "[%(asctime)s (%(process)d) %(levelname)s] %(message)s"
 _formatter = logging.Formatter(_log_format)
@@ -60,3 +61,15 @@ def mp_logger_init(log_dir: str, log_level: int = logging.DEBUG) -> (QueueListen
         logger.addHandler(file_handler)
 
     return ql, q
+
+
+def mp_child_logger_init(q: mp.Queue, log_level: int = logging.DEBUG):
+    qh = QueueHandler(q)
+    logger = logging.getLogger()
+
+    # Clean up any existing handlers in subprocess default logger.
+    while logger.hasHandlers():
+        logger.removeHandler(logger.handlers[0])
+
+    logger.setLevel(log_level)
+    logger.addHandler(qh)

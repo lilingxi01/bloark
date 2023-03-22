@@ -1,11 +1,11 @@
 import logging
 import os.path
 import shutil
-from logging.handlers import QueueHandler
 from typing import Union, Callable, TypeVar, Tuple, Any, Generic
 from multiprocessing import Manager, Lock, Value, Pool
 
-from twb.logger import mp_logger_init
+from .logger import mp_logger_init, mp_child_logger_init
+
 
 # ========== Global Variables for cross-process communication ==========
 
@@ -23,10 +23,7 @@ def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, in
     _active_pids = active_pids
 
     # Initialize the logger within the sub-process.
-    qh = QueueHandler(q)
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(qh)
+    mp_child_logger_init(q)
 
 
 # ========== RDS Process Controller ==========
@@ -199,9 +196,6 @@ class RDSProcessManager(Generic[_R]):
 
         # For process security, we will use only 1 process if num_proc is None.
         final_num_proc = num_proc if num_proc is not None else (os.cpu_count() or 1)
-
-        if log_dir is not None and os.path.exists(log_dir):
-            shutil.rmtree(log_dir)
 
         ql, q = mp_logger_init(log_dir=log_dir, log_level=log_level)
         self.queue_listener = ql  # Will need to stop it in the end.
