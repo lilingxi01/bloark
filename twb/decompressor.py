@@ -6,7 +6,7 @@ from typing import Union
 
 import py7zr
 
-from .logger import universal_logger_init
+from .logger import universal_logger_init, twb_logger
 from .parallelization import RDSProcessManager, RDSProcessController
 from .utils import get_file_list, decompress_zstd
 
@@ -84,7 +84,7 @@ class Decompressor:
 
         end_time = time.time()
         execution_duration = end_time - start_time
-        logging.info(f'Decompression finished in {execution_duration:.2f} seconds.')
+        twb_logger.info(f'Decompression finished in {execution_duration:.2f} seconds.')
 
 
 def _decompress_file(controller: RDSProcessController, path: str, output_dir: str):

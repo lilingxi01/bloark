@@ -4,8 +4,7 @@ import shutil
 from typing import Union, Callable, TypeVar, Tuple, Any, Generic
 from multiprocessing import Manager, Lock, Value, Pool
 
-from .logger import mp_logger_init, mp_child_logger_init
-
+from .logger import mp_logger_init, mp_child_logger_init, twb_logger
 
 # ========== Global Variables for cross-process communication ==========
 
@@ -68,78 +67,75 @@ class RDSProcessController:
         If the process ID already exists, the previous temporary directory will be deleted in case of disk space safety.
         :param temporary_dir: the temporary directory path
         """
-        pid = os.getpid()
-        if pid in self.pid_map:
-            # Cleanup the temporary directory.
-            prev_temporary_dir = self.pid_map[pid]
-            if prev_temporary_dir and os.path.exists(prev_temporary_dir):
-                # Record the existence of the temporary directory, which should be an error.
-                self.logerr(f'Temporary directory ({prev_temporary_dir}) is undeleted!')
-                shutil.rmtree(prev_temporary_dir)
-        self.pid_map[pid] = temporary_dir
+        try:
+            pid = os.getpid()
+            if pid in self.pid_map:
+                # Cleanup the temporary directory.
+                prev_temporary_dir = self.pid_map[pid]
+                if prev_temporary_dir and os.path.exists(prev_temporary_dir):
+                    # Record the existence of the temporary directory, which should be an error.
+                    self.logerr(f'Temporary directory ({prev_temporary_dir}) is undeleted!')
+                    shutil.rmtree(prev_temporary_dir, ignore_errors=True)
+            self.pid_map[pid] = temporary_dir
 
-        # Count the number of inactive processes being removed. (for logging)
-        inactive_count = 0
+            # Count the number of inactive processes being removed. (for logging)
+            inactive_count = 0
 
-        self.parallel_lock.acquire()
+            self.parallel_lock.acquire()
 
-        # We initialize the active process list count when the number of possible processes exceeds the desired
-        # number of processes or when we are already counting the number of active processes.
-        if len(self.active_pids) > 0 or len(self.pid_map.keys()) > self.num_proc:
-            if pid in self.active_pids:
-                self.active_pids.remove(pid)
-            self.active_pids.append(pid)
+            # We initialize the active process list count when the number of possible processes exceeds the desired
+            # number of processes or when we are already counting the number of active processes.
+            if len(self.active_pids) > 0 or len(self.pid_map.keys()) > self.num_proc:
+                if pid in self.active_pids:
+                    self.active_pids.remove(pid)
+                self.active_pids.append(pid)
 
-            # Remove the inactive processes when the number of active processes reaches the desired number.
-            if len(self.active_pids) >= self.num_proc:
-                inactive_pids = set(self.pid_map.keys()) - set(self.active_pids)
-                for pid in inactive_pids:
-                    temp_folder = self.pid_map[pid]
-                    if os.path.exists(temp_folder):
-                        inactive_count += 1
-                        shutil.rmtree(temp_folder)  # Remove the temporary directory under parallel lock.
-                    del self.pid_map[pid]
-                self.active_pids.clear()  # Clear the active process list for preparation of the next possible leak.
+                # Remove the inactive processes when the number of active processes reaches the desired number.
+                if len(self.active_pids) >= self.num_proc:
+                    self.logwarn('Cleaning up inactive processes...')
+                    inactive_pids = set(self.pid_map.keys()) - set(self.active_pids)
+                    for pid in inactive_pids:
+                        temp_folder = self.pid_map[pid]
+                        if os.path.exists(temp_folder):
+                            inactive_count += 1
+                            shutil.rmtree(temp_folder, ignore_errors=True)
+                        del self.pid_map[pid]
+                    # Clear the active process list for preparation of the next possible leak.
+                    while len(self.active_pids) > 0:
+                        self.active_pids.pop()
 
-        self.parallel_lock.release()
+            self.parallel_lock.release()
 
-        if inactive_count > 0:
-            self.loginfo(f'Removed {inactive_count} inactive processes.')
+            if inactive_count > 0:
+                self.logwarn(f'Removed {inactive_count} inactive processes.')
 
-    def print(self, *message: Any, severity: str = 'info'):
+        except Exception as e:
+            self.logfatal(f'Failed to register the process: {e}')
+
+    def print(self, *message: Any, severity: int = logging.DEBUG):
         """
         Print the message with the process ID.
         :param message: the message to be printed
         :param severity: the severity of the message (info, warning, error)
         """
         self.logger_lock.acquire()
-        printable_content = ' '.join([str(m) for m in message])
-        if severity == 'warning':
-            logging.warning(printable_content)
-        elif severity == 'error':
-            logging.error(printable_content)
-        elif severity == 'fatal':
-            logging.critical(printable_content)
-        elif severity == 'info':
-            logging.info(printable_content)
-        else:
-            logging.debug(printable_content)
+        twb_logger.log(*message, severity=severity)
         self.logger_lock.release()
 
     def logdebug(self, *message: Any):
-        self.print(*message, severity='debug')
+        self.print(*message, severity=logging.DEBUG)
 
     def loginfo(self, *message: Any):
-        self.print(*message, severity='info')
+        self.print(*message, severity=logging.INFO)
 
     def logwarn(self, *message: Any):
-        self.print(*message, severity='warning')
+        self.print(*message, severity=logging.WARNING)
 
     def logerr(self, *message: Any):
-        self.print(*message, severity='error')
+        self.print(*message, severity=logging.ERROR)
 
     def logfatal(self, *message: Any):
-        self.print(*message, severity='fatal')
+        self.print(*message, severity=logging.CRITICAL)
 
 
 # ========== Inner Executable ==========

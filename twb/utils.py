@@ -119,4 +119,4 @@ def cleanup_dir(path: str):
     :param path: the directory path
     """
     if os.path.exists(path):
-        shutil.rmtree(path)
+        shutil.rmtree(path, ignore_errors=True)

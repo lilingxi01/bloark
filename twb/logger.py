@@ -73,3 +73,33 @@ def mp_child_logger_init(q: mp.Queue, log_level: int = logging.DEBUG):
 
     logger.setLevel(log_level)
     logger.addHandler(qh)
+
+
+class _TWBLogger:
+    @staticmethod
+    def log(*message, severity: int = logging.DEBUG):
+        printable_content = ' '.join([str(m) for m in message])
+        logging.log(severity, printable_content)
+
+    @staticmethod
+    def info(*message):
+        _TWBLogger.log(*message, severity=logging.INFO)
+
+    @staticmethod
+    def debug(*message):
+        _TWBLogger.log(*message, severity=logging.DEBUG)
+
+    @staticmethod
+    def warning(*message):
+        _TWBLogger.log(*message, severity=logging.WARNING)
+
+    @staticmethod
+    def error(*message):
+        _TWBLogger.log(*message, severity=logging.ERROR)
+
+    @staticmethod
+    def critical(*message):
+        _TWBLogger.log(*message, severity=logging.CRITICAL)
+
+
+twb_logger = _TWBLogger

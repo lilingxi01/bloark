@@ -8,7 +8,7 @@ import py7zr
 import jsonlines
 import uuid
 
-from .logger import universal_logger_init
+from .logger import universal_logger_init, twb_logger
 from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
@@ -101,7 +101,7 @@ class Builder:
         os.makedirs(temp_dir)
 
         # Decompress the files in parallel.
-        logging.info('Starting RDS process manager...')
+        twb_logger.info('Starting RDS process manager...')
 
         process_manager_context = {
             'processor': processor,  # The interior processor for blocks.
@@ -117,17 +117,17 @@ class Builder:
             nonlocal curr_count
             curr_count += 1
             curr_processed_progress = curr_count / total_count * 100 if total_count > 0 else -1
-            logging.info(f'{curr_count} / {total_count} ==> ({curr_processed_progress:.2f}%)')
+            twb_logger.info(f'{curr_count} / {total_count} ==> ({curr_processed_progress:.2f}%)')
 
         def _error_callback(e):
-            logging.error('An error occurred in a sub-process which makes it terminated.',
-                                   'Check next error log for details.')
-            logging.error(e)
+            twb_logger.error('An error occurred in a sub-process which makes it terminated.',
+                             'Check next error log for details.')
+            twb_logger.error(e)
 
             nonlocal curr_count
             curr_count += 1
             curr_processed_progress = curr_count / total_count * 100 if total_count > 0 else -1
-            logging.info(f'{curr_count} / {total_count} ==> ({curr_processed_progress:.2f}%) (Terminated)')
+            twb_logger.info(f'{curr_count} / {total_count} ==> ({curr_processed_progress:.2f}%) (Terminated)')
 
         start_time = time.time()
 
@@ -150,7 +150,7 @@ class Builder:
 
         end_time = time.time()
         execution_duration = end_time - start_time
-        logging.info(f"!!! All done. (Took {execution_duration:.2f} seconds in total)")
+        twb_logger.info(f"!!! All done. (Took {execution_duration:.2f} seconds in total)")
 
         # Clean up the temporary directory.
         cleanup_dir(temp_dir)
@@ -174,7 +174,6 @@ def _file_processor(controller: RDSProcessController,
     block_interior_processor = context.get('processor', DefaultBIP())
     should_compress = context.get('compress', True)
     revisions_per_block = context.get('revisions_per_block', _DEFAULT_REVISIONS_PER_BLOCK)
-    total_count = context.get('total_count', 0)
 
     # Generate a temporary id for the file.
     temp_id = uuid.uuid4().hex
