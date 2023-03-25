@@ -1,9 +1,11 @@
 import os
-from typing import List
+from typing import List, Callable, Union
 import zstandard as zstd
 import py7zr
 import shutil
 import psutil
+
+from twb.logger import twb_logger
 
 
 def get_file_list(input_path: str) -> List[str]:
@@ -113,10 +115,21 @@ def get_memory_consumption() -> int:
     return round(memory_usage_mb, 3)
 
 
-def cleanup_dir(path: str):
+def _rmtree_error_handler(func, path, exc_info):
+    twb_logger.error(f"Error occurred while calling {func.__name__} on {path}")
+    twb_logger.error(f"Error details: {exc_info}")
+
+    # TODO: We might be able to attempt to resolve the issue based on exc_info and then retry the operation.
+
+
+def cleanup_dir(path: str, onerror: Union[Callable, None] = _rmtree_error_handler):
     """
     Clean up the directory.
     :param path: the directory path
+    :param onerror: the error handler
     """
     if os.path.exists(path):
-        shutil.rmtree(path, ignore_errors=True)
+        try:
+            shutil.rmtree(path, onerror=onerror)
+        except Exception as e:
+            twb_logger.error(e)

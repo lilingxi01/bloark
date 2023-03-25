@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import os
 import logging
+import shutil
 from logging.handlers import QueueListener, QueueHandler
 from typing import Union
 
@@ -25,6 +26,19 @@ def _get_logger_file_handler(log_dir: str) -> Union[logging.FileHandler, None]:
     return None
 
 
+def cleanup_logger_dir(log_dir: str):
+    if log_dir is not None and os.path.exists(log_dir):
+        try:
+            shutil.rmtree(log_dir)
+        except Exception as e:
+            logging.error(f'Error occurred while cleaning up the log directory {log_dir}: {e}')
+
+
+def clean_up_logger(logger: logging.Logger):
+    while logger.hasHandlers():
+        logger.removeHandler(logger.handlers[0])
+
+
 def universal_logger_init(log_dir: str, log_level: int = logging.DEBUG):
     stream_handler = _get_logger_stream_handler()
     file_handler = _get_logger_file_handler(log_dir=log_dir)
@@ -32,8 +46,7 @@ def universal_logger_init(log_dir: str, log_level: int = logging.DEBUG):
     logger = logging.getLogger()
 
     # Clean up any existing handlers in default logger.
-    while logger.hasHandlers():
-        logger.removeHandler(logger.handlers[0])
+    clean_up_logger(logger)
 
     logger.setLevel(log_level)
     logger.addHandler(stream_handler)
@@ -68,8 +81,7 @@ def mp_child_logger_init(q: mp.Queue, log_level: int = logging.DEBUG):
     logger = logging.getLogger()
 
     # Clean up any existing handlers in subprocess default logger.
-    while logger.hasHandlers():
-        logger.removeHandler(logger.handlers[0])
+    clean_up_logger(logger)
 
     logger.setLevel(log_level)
     logger.addHandler(qh)

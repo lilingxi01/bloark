@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 import time
 from typing import List, Union, Callable
 import xmltodict
@@ -8,7 +7,7 @@ import py7zr
 import jsonlines
 import uuid
 
-from .logger import universal_logger_init, twb_logger
+from .logger import universal_logger_init, twb_logger, cleanup_logger_dir
 from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
@@ -78,9 +77,8 @@ class Builder:
         """
         zip_file_list = self.files
 
-        # If log dir exists, remove it first.
-        if log_dir is not None and os.path.exists(log_dir):
-            shutil.rmtree(log_dir)
+        # Clean up the log dir if exists.
+        cleanup_logger_dir(log_dir=log_dir)
 
         # Initialize the logger.
         universal_logger_init(log_dir=log_dir, log_level=log_level)
@@ -91,7 +89,7 @@ class Builder:
 
         # If output dir exists, remove it first.
         if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
+            cleanup_dir(output_dir)
 
         # Create the output directory.
         os.makedirs(output_dir)
@@ -306,6 +304,8 @@ def _file_processor(controller: RDSProcessController,
         very_end_time = time.time()
         total_execution_duration = very_end_time - very_start_time
         controller.loginfo(f'File done: {archive_filename}. (Duration: {total_execution_duration:.2f}s)')
+
+        controller.unregister()
 
 
 def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):

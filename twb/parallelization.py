@@ -1,10 +1,11 @@
 import logging
 import os.path
-import shutil
 from typing import Union, Callable, TypeVar, Tuple, Any, Generic
 from multiprocessing import Manager, Lock, Value, Pool
 
 from .logger import mp_logger_init, mp_child_logger_init, twb_logger
+from .utils import cleanup_dir
+
 
 # ========== Global Variables for cross-process communication ==========
 
@@ -74,43 +75,64 @@ class RDSProcessController:
                 prev_temporary_dir = self.pid_map[pid]
                 if prev_temporary_dir and os.path.exists(prev_temporary_dir):
                     # Record the existence of the temporary directory, which should be an error.
-                    self.logerr(f'Temporary directory ({prev_temporary_dir}) is undeleted!')
-                    shutil.rmtree(prev_temporary_dir, ignore_errors=True)
+                    self.logerr(f'Temporary directory ({prev_temporary_dir}) for current pid is undeleted!')
+                    cleanup_dir(prev_temporary_dir)
             self.pid_map[pid] = temporary_dir
 
             # Count the number of inactive processes being removed. (for logging)
-            inactive_count = 0
+            dirs_to_be_removed = []
 
-            self.parallel_lock.acquire()
+            # Acquire parallel lock so that other processes will not do the same thing again under the same condition.
+            with self.parallel_lock:
+                # We initialize the active process list count when the number of possible processes exceeds the desired
+                # number of processes or when we are already counting the number of active processes.
+                if len(self.active_pids) > 0 or len(self.pid_map.keys()) > self.num_proc:
+                    if pid in self.active_pids:
+                        self.active_pids.remove(pid)
+                    self.active_pids.append(pid)
 
-            # We initialize the active process list count when the number of possible processes exceeds the desired
-            # number of processes or when we are already counting the number of active processes.
-            if len(self.active_pids) > 0 or len(self.pid_map.keys()) > self.num_proc:
-                if pid in self.active_pids:
-                    self.active_pids.remove(pid)
-                self.active_pids.append(pid)
+                    # Remove the inactive processes when the number of active processes reaches the desired number.
+                    if len(self.active_pids) >= self.num_proc:
+                        self.logwarn('Cleaning up inactive processes...')
+                        inactive_pids = set(self.pid_map.keys()) - set(self.active_pids)
+                        for inactive_pid in inactive_pids:
+                            temp_folder = self.pid_map[pid]
+                            if os.path.exists(temp_folder):
+                                dirs_to_be_removed.append((inactive_pid, temp_folder))
+                            del self.pid_map[pid]
+                        # Clear the active process list for preparation of the next possible leak.
+                        while len(self.active_pids) > 0:
+                            self.active_pids.pop()
 
-                # Remove the inactive processes when the number of active processes reaches the desired number.
-                if len(self.active_pids) >= self.num_proc:
-                    self.logwarn('Cleaning up inactive processes...')
-                    inactive_pids = set(self.pid_map.keys()) - set(self.active_pids)
-                    for pid in inactive_pids:
-                        temp_folder = self.pid_map[pid]
-                        if os.path.exists(temp_folder):
-                            inactive_count += 1
-                            shutil.rmtree(temp_folder, ignore_errors=True)
-                        del self.pid_map[pid]
-                    # Clear the active process list for preparation of the next possible leak.
-                    while len(self.active_pids) > 0:
-                        self.active_pids.pop()
-
-            self.parallel_lock.release()
-
-            if inactive_count > 0:
-                self.logwarn(f'Removed {inactive_count} inactive processes.')
+            # Cleanup the temporary directories without lock, so that the lock will not be held for a long time.
+            for dir_to_be_removed in dirs_to_be_removed:
+                inactive_pid, broken_dir = dir_to_be_removed
+                self.logwarn(f'Removing temporary directory for pid: {inactive_pid}')
+                cleanup_dir(broken_dir)
 
         except Exception as e:
             self.logfatal(f'Failed to register the process: {e}')
+
+    def unregister(self):
+        """
+        Unregister the process.
+        """
+        try:
+            temp_dir = None
+            pid = os.getpid()
+            with self.parallel_lock:
+                if pid in self.pid_map:
+                    temp_dir = self.pid_map[pid]
+                    del self.pid_map[pid]
+                if pid in self.active_pids:
+                    self.active_pids.remove(pid)
+
+            # Cleanup the temporary directory if it exists.
+            if temp_dir is not None and os.path.exists(temp_dir):
+                cleanup_dir(temp_dir)
+
+        except Exception as e:
+            self.logfatal(f'Failed to unregister the process: {e}')
 
     def print(self, *message: Any, severity: int = logging.DEBUG):
         """
@@ -118,9 +140,8 @@ class RDSProcessController:
         :param message: the message to be printed
         :param severity: the severity of the message (info, warning, error)
         """
-        self.logger_lock.acquire()
+        # In current version, we are logging without logger lock to avoid the deadlock process.
         twb_logger.log(*message, severity=severity)
-        self.logger_lock.release()
 
     def logdebug(self, *message: Any):
         self.print(*message, severity=logging.DEBUG)
@@ -204,6 +225,8 @@ class RDSProcessManager(Generic[_R]):
 
         parallel_lock = Lock()
         logger_lock = Lock()
+
+        self.manager = manager
 
         self.pool = Pool(
             processes=final_num_proc,
