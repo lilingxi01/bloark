@@ -5,8 +5,9 @@ import requests
 from bs4 import BeautifulSoup
 from abc import ABC, abstractmethod
 
-from twb.logger import universal_logger_init, twb_logger
+from twb.logger import universal_logger_init, twb_logger, cleanup_logger_dir
 from twb.parallelization import RDSProcessManager, RDSProcessController
+from twb.utils import get_curr_version
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
@@ -48,6 +49,8 @@ class Downloader:
         self.output_dir = output_dir
         self.num_proc = num_proc
         self.limit = limit
+
+        cleanup_logger_dir(log_dir=log_dir)
 
         universal_logger_init(log_dir=log_dir, log_level=log_level)
 
@@ -91,6 +94,9 @@ class Downloader:
             raise Warning("No URLs are found for the given date.")
 
     def start(self):
+        # Log the version.
+        twb_logger.info(f'TWB Package Version: {get_curr_version()}')
+
         output_dir = self.output_dir
         num_proc = self.num_proc
         limit = self.limit

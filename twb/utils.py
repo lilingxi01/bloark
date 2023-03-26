@@ -4,8 +4,19 @@ import zstandard as zstd
 import py7zr
 import shutil
 import psutil
+from importlib.metadata import version, PackageNotFoundError
 
 from twb.logger import twb_logger
+
+
+def get_curr_version():
+    """
+    Get the version of the package.
+    """
+    try:
+        return version('twb-project')
+    except PackageNotFoundError:
+        return "Package not found"
 
 
 def get_file_list(input_path: str) -> List[str]:

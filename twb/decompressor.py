@@ -7,7 +7,7 @@ import py7zr
 
 from .logger import universal_logger_init, twb_logger, cleanup_logger_dir
 from .parallelization import RDSProcessManager, RDSProcessController
-from .utils import get_file_list, decompress_zstd
+from .utils import get_file_list, decompress_zstd, get_curr_version
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
@@ -71,6 +71,9 @@ class Decompressor:
         self.files.extend(get_file_list(path))
 
     def start(self):
+        # Log the version.
+        twb_logger.info(f'TWB Package Version: {get_curr_version()}')
+
         output_dir = self.output_dir
         num_proc = self.num_proc
         log_dir = self.log_dir

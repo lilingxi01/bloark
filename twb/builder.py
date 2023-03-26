@@ -8,7 +8,7 @@ import jsonlines
 import uuid
 
 from .logger import universal_logger_init, twb_logger, cleanup_logger_dir
-from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir
+from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir, get_curr_version
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
 
@@ -81,6 +81,9 @@ class Builder:
 
         # Initialize the logger.
         universal_logger_init(log_dir=log_dir, log_level=log_level)
+
+        # Log the version.
+        twb_logger.info(f'TWB Package Version: {get_curr_version()}')
 
         # If there is no file to process, raise a warning and return.
         if len(zip_file_list) == 0:
