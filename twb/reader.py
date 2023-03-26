@@ -1,9 +1,15 @@
+import logging
 import os
-from typing import Callable, Union
+from typing import Union
 import time
 
+from .modifier import Modifier
+from .logger import cleanup_logger_dir, universal_logger_init, twb_logger
 from .parallelization import RDSProcessManager
-from .utils import get_file_list, decompress_zstd
+from .utils import get_file_list, decompress_zstd, cleanup_dir
+
+_DEFAULT_NUM_PROC = 1
+_DEFAULT_LOG_LEVEL = logging.INFO
 
 
 class Reader:
@@ -20,11 +26,34 @@ class Reader:
     Preload function accepts a path to a file or a directory, and can be called multiple times (for multiple files).
 
     Attributes:
+        num_proc (int): The number of processes to use.
+        log_dir (str): The dir to the log file.
+        log_level (int): The log level.
         files (list): A list of files to be read.
+        modifiers (list): A list of modifiers to be applied.
     """
 
-    def __init__(self):
+    def __init__(self,
+                 log_dir: Union[str, None] = None,
+                 num_proc: int = _DEFAULT_NUM_PROC,
+                 log_level: int = _DEFAULT_LOG_LEVEL):
+        """
+        :param log_dir: the dir to the log file (default: None)
+        :param num_proc: the number of processes to use (default: 1)
+        :param log_level: the log level (default: logging.INFO)
+        """
+        self.log_dir = log_dir
+        self.num_proc = num_proc
+        self.log_level = log_level
+
         self.files = []
+        self.modifiers = []
+
+        # If log dir exists, remove it first.
+        cleanup_logger_dir(log_dir=log_dir)
+
+        # Initialize the logger.
+        universal_logger_init(log_dir=log_dir, log_level=log_level)
 
     def preload(self, path: str):
         """
@@ -40,22 +69,35 @@ class Reader:
             raise FileNotFoundError('The path does not exist.')
         self.files.extend(get_file_list(path))
 
-    def decompress(self,
-                   output_dir: str,
-                   num_proc: Union[int, None] = None):
+    def glimpse(self):
         """
-        Decompress the files.
-        :param output_dir: the output directory
-        :param num_proc: the number of processes to use
+        Take a glimpse of the data.
+        It could still be large if one object contains a lot of information (e.g. many revisions, long article).
         """
+        # TODO: Implement this.
+        #  It should be the same as reading the data, but only take the first file and the first block.
+        pass
 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+    def decompress(self,
+                   output_dir: str):
+        """
+        Decompress the selected files.
+        :param output_dir: the directory to store the decompressed files
+        """
+        num_proc = self.num_proc
+        log_dir = self.log_dir
+        log_level = self.log_level
+
+        if os.path.exists(output_dir):
+            cleanup_dir(output_dir)
+        os.makedirs(output_dir)
 
         start_time = time.time()
 
         pm = RDSProcessManager(
-            num_proc=num_proc
+            num_proc=num_proc,
+            log_dir=log_dir,
+            log_level=log_level
         )
         for file in self.files:
             pm.apply_async(
@@ -69,14 +111,22 @@ class Reader:
 
         end_time = time.time()
         execution_duration = end_time - start_time
-        print(f'[Read] Decompression finished in {execution_duration:.2f} seconds.')
+        twb_logger.info(f'Decompression finished. (Duration: {execution_duration:.2f}s)')
 
-    def map(self, func: Callable[[dict], None]):
+    def add_modifier(self, modifier: Modifier):
         """
         Map a function to each block.
-        :param func: the function to be mapped
+        :param modifier: the modifier to be added
         """
-        # TODO: Implement this method.
+        self.modifiers.append(modifier)
+
+    def build_modification(self,
+                           output_dir: str):
+        """
+        Build the blocks after apply the modifiers.
+        :param output_dir: the directory to store the modified files
+        """
+        # TODO: Implement this.
         pass
 
 

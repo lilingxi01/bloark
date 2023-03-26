@@ -9,7 +9,7 @@ from twb.logger import universal_logger_init, twb_logger
 from twb.parallelization import RDSProcessManager, RDSProcessController
 
 _DEFAULT_NUM_PROC = 1
-_DEFAULT_LOG_LEVEL = logging.DEBUG
+_DEFAULT_LOG_LEVEL = logging.INFO
 
 
 class Downloader:

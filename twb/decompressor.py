@@ -1,35 +1,60 @@
 import logging
 import os
-import shutil
 import time
 from typing import Union
 
 import py7zr
 
-from .logger import universal_logger_init, twb_logger
+from .logger import universal_logger_init, twb_logger, cleanup_logger_dir
 from .parallelization import RDSProcessManager, RDSProcessController
 from .utils import get_file_list, decompress_zstd
+
+_DEFAULT_NUM_PROC = 1
+_DEFAULT_LOG_LEVEL = logging.INFO
 
 
 class Decompressor:
     """
-    The core class to decompress normal 7z files or zstd files.
+    The core class to decompress normal 7z files or zstd files in cluster environment.
 
-    Basic usage:
-
-        import twb
-        decom = twb.Decompressor()  # Create an instance.
-        decom.preload('./input/archive.7z')  # Preload the files to be processed.
+    NOTE: Decompressor is used for decompressing a file or a directory of files in cluster environment where
+    command line decompression is not available. This class is not used to read the dataset.
+    If you are trying to read the dataset, please use `twb.Reader` rather than `twb.Decompressor`.
 
     You must preload the files to be processed before starting decompressing.
     Preload function accepts a path to a file or a directory, and can be called multiple times (for multiple files).
 
     Attributes:
+        output_dir (str): The output directory.
+        num_proc (int): The number of processes to use.
+        log_dir (str): The dir to the log file.
+        log_level (int): The log level.
         files (list): A list of files to be read.
     """
 
-    def __init__(self):
+    def __init__(self,
+                 output_dir: str,
+                 log_dir: Union[str, None] = None,
+                 num_proc: int = _DEFAULT_NUM_PROC,
+                 log_level: int = _DEFAULT_LOG_LEVEL):
+        """
+        :param output_dir: the output directory
+        :param log_dir: the dir to the log file (default: None)
+        :param num_proc: the number of processes to use (default: 1)
+        :param log_level: the log level (default: logging.INFO)
+        """
+        self.output_dir = output_dir
+        self.log_dir = log_dir
+        self.num_proc = num_proc
+        self.log_level = log_level
+
         self.files = []
+
+        # If log dir exists, remove it first.
+        cleanup_logger_dir(log_dir=log_dir)
+
+        # Initialize the logger.
+        universal_logger_init(log_dir=log_dir, log_level=log_level)
 
     def preload(self, path: str):
         """
@@ -45,24 +70,11 @@ class Decompressor:
             raise FileNotFoundError('The path does not exist.')
         self.files.extend(get_file_list(path))
 
-    def go(self,
-           output_dir: str,
-           num_proc: int = None,
-           log_dir: Union[str, None] = None,
-           log_level: int = logging.INFO):
-        """
-        Decompress the files.
-        :param output_dir: the output directory
-        :param num_proc: the number of processes to use
-        :param log_dir: the dir to the log file (default: None)
-        :param log_level: the log level (default: logging.INFO)
-        """
-
-        # If log dir exists, remove it first.
-        if log_dir is not None and os.path.exists(log_dir):
-            shutil.rmtree(log_dir)
-
-        universal_logger_init(log_dir=log_dir, log_level=log_level)
+    def start(self):
+        output_dir = self.output_dir
+        num_proc = self.num_proc
+        log_dir = self.log_dir
+        log_level = self.log_level
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -70,8 +82,13 @@ class Decompressor:
         start_time = time.time()
 
         pm = RDSProcessManager(
-            num_proc=num_proc
+            num_proc=num_proc,
+            log_dir=log_dir,
+            log_level=log_level
         )
+
+        # TODO: Add a error handler to handle the error when decompressing a file or process terminated unexpectedly.
+
         for file in self.files:
             pm.apply_async(
                 executable=_decompress_file,
@@ -99,6 +116,9 @@ def _decompress_file(controller: RDSProcessController, path: str, output_dir: st
         decompressed_path = os.path.join(output_dir, decompressed_name)
         with py7zr.SevenZipFile(path, mode='r', mp=False) as z:
             z.extractall(path=decompressed_path)
+    else:
+        controller.logwarn(f'Unknown file type: {original_name}')
+        return
     end_time = time.time()
     execution_duration = end_time - start_time
     controller.logdebug(f'Decompression took {execution_duration:.2f} seconds. ({original_name})')

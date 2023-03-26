@@ -115,6 +115,34 @@ def get_memory_consumption() -> int:
     return round(memory_usage_mb, 3)
 
 
+def get_line_positions(path: str):
+    """
+    Get all line positions in the given file. So that it could be re-used to read the file for a specific line.
+    """
+    line_positions = []
+
+    with open(path, 'r') as f:
+        # Get position before reading the line so that it is the beginning of the line.
+        position = f.tell()
+        line = f.readline()
+        while line:
+            if len(line) > 0:
+                line_positions.append(position)
+            position = f.tell()
+            line = f.readline()
+
+    return line_positions
+
+
+def read_line_in_file(path: str, position: int):
+    """
+    Read a specific line in the file without loading the entire file into memory.
+    """
+    with open(path, 'r') as f:
+        f.seek(position)
+        return f.readline()
+
+
 def _rmtree_error_handler(func, path, exc_info):
     twb_logger.error(f"Error occurred while calling {func.__name__} on {path}")
     twb_logger.error(f"Error details: {exc_info}")
