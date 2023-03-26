@@ -38,6 +38,8 @@ def get_file_list(input_path: str) -> List[str]:
     all_files = []
     for root, directories, files in os.walk(input_path):
         for file in files:
+            if file.startswith('.'):
+                continue
             file_path = os.path.join(root, file)
             all_files.append(file_path)
 

@@ -1,7 +1,6 @@
 import multiprocessing as mp
 import os
 import logging
-import shutil
 from logging.handlers import QueueListener, QueueHandler
 from typing import Union
 

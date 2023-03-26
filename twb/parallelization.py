@@ -25,6 +25,9 @@ def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, in
     # Initialize the logger within the sub-process.
     mp_child_logger_init(q)
 
+    # Log the initialization of the process.
+    twb_logger.debug('Process initialized.')
+
 
 # ========== RDS Process Controller ==========
 
@@ -45,8 +48,6 @@ class RDSProcessController:
         self.pid_map = pid_map
         self.active_pids = active_pids
         self.num_proc = num_proc
-
-        self.logdebug(f'Process initialized.')
 
     def declare_index(self):
         self.parallel_lock.acquire()
