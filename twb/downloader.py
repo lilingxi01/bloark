@@ -1,10 +1,15 @@
+import logging
 import os
 from typing import List, Union
-from tqdm import tqdm
 import requests
 from bs4 import BeautifulSoup
 from abc import ABC, abstractmethod
-from multiprocessing import Pool
+
+from twb.logger import universal_logger_init, twb_logger
+from twb.parallelization import RDSProcessManager, RDSProcessController
+
+_DEFAULT_NUM_PROC = 1
+_DEFAULT_LOG_LEVEL = logging.DEBUG
 
 
 class Downloader:
@@ -19,14 +24,35 @@ class Downloader:
         is_started: Whether the downloader is started.
         is_completed: Whether the downloader is completed.
     """
-    def __init__(self):
+    def __init__(self,
+                 output_dir: str,
+                 log_dir: Union[str, None] = None,
+                 num_proc: Union[int, None] = _DEFAULT_NUM_PROC,
+                 log_level: int = _DEFAULT_LOG_LEVEL,
+                 limit: Union[int, None] = None):
+        """
+        :param output_dir: The output directory.
+        :param log_dir: The log directory. (default: None)
+        :param num_proc: The number of processes to use for downloading. (default: number of CPUs)
+                         (Might be limited by the profile.)
+        :param log_level: The log level. (default: logging.DEBUG)
+        :param limit: The maximum number of files to download. (default: no limit)
+        """
         self.profile = None
         self.url_batches = []
         self.context = dict()
         self.downloaded_files = []
         self.is_started = False
         self.is_completed = False
-        pass
+
+        self.output_dir = output_dir
+        self.num_proc = num_proc
+        self.limit = limit
+
+        universal_logger_init(log_dir=log_dir, log_level=log_level)
+
+        self.log_dir = log_dir
+        self.log_level = log_level
 
     def will_download_wiki_history_dump(self, date: Union[str, None] = None):
         """
@@ -64,17 +90,11 @@ class Downloader:
         if len(self.url_batches) == 0:
             raise Warning("No URLs are found for the given date.")
 
-    def start(self,
-              output_dir: str,
-              num_proc: Union[int, None] = None,
-              limit: Union[int, None] = None):
-        """
-        Starts downloading the profile.
-        :param output_dir: The output directory.
-        :param num_proc: The number of processes to use for downloading. (default: number of CPUs)
-                         (Might be limited by the profile.)
-        :param limit: The maximum number of files to download. (default: no limit)
-        """
+    def start(self):
+        output_dir = self.output_dir
+        num_proc = self.num_proc
+        limit = self.limit
+
         if self.profile is None:
             raise Exception("No profile is assigned to the downloader.")
         if self.url_batches is None or len(self.url_batches) == 0:
@@ -97,11 +117,13 @@ class Downloader:
         # Limit the number of files to download.
         if limit is not None:
             if limit <= 0:
-                raise Warning('If you want to download all files, please set limit to None or do not define it.')
+                twb_logger.critical('If you want to download all files, please set limit to None or do not define it.',
+                                    '0 or less than 0 are not valid limit number.')
+                return
             url_batches = url_batches[:limit]
 
         if len(url_batches) == 0:
-            print('[Downloader] No files need to be downloaded. Directly exit.')
+            twb_logger.warning('No files need to be downloaded. Directly exit.')
             self.is_completed = True
             return
 
@@ -109,42 +131,65 @@ class Downloader:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        print(f'[Downloader] Will download {len(url_batches)} files.')
+        twb_logger.info(f'Will download {len(url_batches)} files.')
 
         if self.profile.max_processes is not None:
             max_num_proc = self.profile.max_processes
             if num_proc is not None and num_proc > max_num_proc:
-                print(f'[Downloader] The number of processes is limited to {max_num_proc} by the profile.')
+                twb_logger.warning(f'The number of processes is limited to {max_num_proc} by the profile.')
             num_proc = min(max_num_proc, num_proc if num_proc is not None else os.cpu_count())
         else:
             num_proc = num_proc if num_proc is not None else os.cpu_count()
 
         # Download the files.
-        print(f'[Downloader] Start downloading. (# of assigned processes: {num_proc})')
-        pool = Pool(processes=num_proc)
-        pbar = tqdm(total=len(url_batches))
+        twb_logger.info(f'Start downloading. (# of assigned processes: {num_proc})')
+
+        pm = RDSProcessManager(
+            num_proc=num_proc,
+            log_dir=self.log_dir,
+            log_level=self.log_level
+        )
+
+        curr_finished = 0
+        total_files = len(url_batches)
         downloaded_files = []
 
-        def _callback_update_pbar(*args):
-            nonlocal downloaded_files
+        def _success_callback(*args):
+            nonlocal downloaded_files, curr_finished
             downloaded_files.append(args[0])
-            pbar.update()
+            curr_finished += 1
+            curr_progress = curr_finished / total_files * 100
+            twb_logger.info(f'Progress: {curr_finished} / {total_files} = ({curr_progress:.2f}%)')
+
+        def _error_callback(e):
+            nonlocal curr_finished
+            curr_finished += 1
+            curr_progress = curr_finished / total_files * 100
+            twb_logger.error(f'Progress: {curr_finished} / {total_files} = ({curr_progress:.2f}%) (Terminated)')
+
+            # Log the error.
+            twb_logger.error(f'Error occurred when downloading: {e}')
 
         # Start processes.
-        for i in range(pbar.total):
-            url = url_batches[i]
-            pool.apply_async(download_executor, args=(url, output_dir), callback=_callback_update_pbar)
+        for url in url_batches:
+            pm.apply_async(
+                executable=download_executor,
+                args=(url, output_dir),
+                callback=_success_callback,
+                error_callback=_error_callback,
+                use_controller=True
+            )
 
         # Wait for all processes to finish.
-        pool.close()
-        pool.join()
+        pm.close()
+        pm.join()
 
-        pbar.close()
+        twb_logger.info(f'Downloading completed. {len(downloaded_files)} files are downloaded.')
 
         self.downloaded_files = downloaded_files
         self.is_completed = True
 
-        print(f'[Downloader] Downloading completed. {len(downloaded_files)} files are downloaded.')
+        twb_logger.debug('Program ends.')
 
 
 class DownloadProfile(ABC):
@@ -189,7 +234,7 @@ class WikiHistoryDumpDownloadProfile(DownloadProfile):
 
 
 # TODO: Progress bar for downloading.
-def download_executor(url: str, target_dir: str):
+def download_executor(controller: RDSProcessController, url: str, target_dir: str):
     # Compute the target path. Should assume that target dir exists.
     target_path = os.path.join(target_dir, url.split('/')[-1])
     # Download the file using a stream.
@@ -199,4 +244,5 @@ def download_executor(url: str, target_dir: str):
             # Write the file in chunks of 10 MB for reduced memory usage.
             for chunk in r.iter_content(chunk_size=10 * 1024 * 1024):
                 f.write(chunk)
+    controller.logdebug(f'Downloaded {target_path}.')
     return target_path

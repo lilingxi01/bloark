@@ -12,7 +12,6 @@ from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
 
-
 _DEFAULT_REVISIONS_PER_BLOCK = 300000
 _DEFAULT_START_INDEX = 0
 _DEFAULT_NUM_PROC = 1
