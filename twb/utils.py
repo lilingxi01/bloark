@@ -68,6 +68,9 @@ def get_decompress_output_path(input_path: str, output_dir: str):
     return os.path.join(output_dir, decompressed_file_name)
 
 
+COMPRESSION_EXTENSION = '.zst'
+
+
 def compress_zstd(input_path: str, output_path: str):
     """
     Compress the blocks into a Zstandard file.

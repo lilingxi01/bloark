@@ -9,7 +9,7 @@ import uuid
 
 from .logger import universal_logger_init, twb_logger, cleanup_logger
 from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir, get_curr_version, \
-    prepare_output_dir
+    prepare_output_dir, COMPRESSION_EXTENSION
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
 
@@ -377,10 +377,6 @@ def _store_article_to_jsonl(article: dict, output_path: str):
         writer.write(article)
 
 
-# The extension of the compressed file.
-compression_extension = '.zst'
-
-
 def _compress_file(path: str, output_dir: str, controller: RDSProcessController):
     """
     Compress a file.
@@ -393,7 +389,7 @@ def _compress_file(path: str, output_dir: str, controller: RDSProcessController)
         controller.logwarn(f'Skipped because the file is not a JSONL file. ({path})')
         return
 
-    output_path = os.path.join(output_dir, os.path.basename(path) + compression_extension)
+    output_path = os.path.join(output_dir, os.path.basename(path) + COMPRESSION_EXTENSION)
 
     try:
         # Compress the file using Zstandard.

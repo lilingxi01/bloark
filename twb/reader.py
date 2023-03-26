@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import uuid
@@ -8,7 +9,7 @@ from .modifier import Modifier
 from .logger import cleanup_logger, universal_logger_init, twb_logger
 from .parallelization import RDSProcessManager, RDSProcessController
 from .utils import get_file_list, decompress_zstd, prepare_output_dir, get_curr_version, get_line_positions, \
-    cleanup_dir, read_line_in_file
+    cleanup_dir, read_line_in_file, compress_zstd, COMPRESSION_EXTENSION
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.DEBUG
@@ -161,6 +162,10 @@ class Reader:
             twb_logger.debug(f'Decompressing...')
             decompressed_path = _decompress_executor(file_path, decompression_temp_dir)
 
+            # Compute target path. The target path should be within compression temporary directory.
+            target_filename = os.path.basename(decompressed_path)
+            target_path = os.path.join(compression_temp_dir, target_filename)
+
             line_positions = get_line_positions(decompressed_path)
 
             twb_logger.info(f'Start modifying {len(line_positions)} blocks...')
@@ -176,7 +181,7 @@ class Reader:
             for line_position in line_positions:
                 pm.apply_async(
                     executable=_modify_executor,
-                    args=(decompressed_path, line_position, self.modifiers, temp_dir),
+                    args=(decompressed_path, line_position, target_path, self.modifiers),
                     use_controller=True,
                     callback=_success_callback,
                     error_callback=_error_callback
@@ -184,6 +189,10 @@ class Reader:
 
             pm.close()
             pm.join()
+
+            # Compress the file.
+            output_path = os.path.join(output_dir, os.path.basename(target_path) + COMPRESSION_EXTENSION)
+            compress_zstd(target_path, output_path)
 
             # Clean up the temporary directory at this step.
             cleanup_dir(temp_dir)
@@ -226,22 +235,34 @@ def _line_position_processor(path: str, output_dir: str):
 def _modify_executor(controller: RDSProcessController,
                      path: str,
                      position: int,
-                     modifiers: List[Modifier],
-                     output_dir: str):
+                     target_path: str,
+                     modifiers: List[Modifier]):
     """
     The executor for the modification process.
     :param controller: the controller of the process
     :param path: the path of the file to be processed
     :param position: the position of the file to be processed
+    :param target_path: the directory to store the modified files
     :param modifiers: the list of modifiers to be applied
-    :param output_dir: the directory to store the modified files
     """
     controller.logdebug(f'Processing block: {position}')
-    block = read_line_in_file(path, position).rstrip('\n')
-    if block[0] != '{' or block[-1] != '}':
+    block_text = read_line_in_file(path, position).rstrip('\n')
+    if block_text[0] != '{' or block_text[-1] != '}':
         controller.logerr(f'Invalid starting of block or end of block: {block}')
         return
 
+    # Parse the block from text to JSON.
+    block = json.loads(block_text)
+
+    # Apply the modifiers.
+    for modifier in modifiers:
+        block = modifier.modify(block)
+
     controller.logdebug(f'Finished block: {position}')
 
-    # TODO: Implement this.
+    with controller.parallel_lock:
+        try:
+            with open(target_path, 'a') as f:
+                f.write(json.dumps(block) + '\n')
+        except Exception as e:
+            controller.logerr(f'Error occurred when writing block to file: {e}')
