@@ -5,9 +5,9 @@ import requests
 from bs4 import BeautifulSoup
 from abc import ABC, abstractmethod
 
-from twb.logger import universal_logger_init, twb_logger, cleanup_logger_dir
+from twb.logger import universal_logger_init, twb_logger, cleanup_logger
 from twb.parallelization import RDSProcessManager, RDSProcessController
-from twb.utils import get_curr_version
+from twb.utils import get_curr_version, prepare_output_dir
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
@@ -26,18 +26,14 @@ class Downloader:
         is_completed: Whether the downloader is completed.
     """
     def __init__(self,
-                 output_dir: str,
                  log_dir: Union[str, None] = None,
                  num_proc: Union[int, None] = _DEFAULT_NUM_PROC,
-                 log_level: int = _DEFAULT_LOG_LEVEL,
-                 limit: Union[int, None] = None):
+                 log_level: int = _DEFAULT_LOG_LEVEL):
         """
-        :param output_dir: The output directory.
         :param log_dir: The log directory. (default: None)
         :param num_proc: The number of processes to use for downloading. (default: number of CPUs)
                          (Might be limited by the profile.)
         :param log_level: The log level. (default: logging.DEBUG)
-        :param limit: The maximum number of files to download. (default: no limit)
         """
         self.profile = None
         self.url_batches = []
@@ -46,13 +42,11 @@ class Downloader:
         self.is_started = False
         self.is_completed = False
 
-        self.output_dir = output_dir
         self.num_proc = num_proc
-        self.limit = limit
 
-        cleanup_logger_dir(log_dir=log_dir)
+        cleanup_logger(log_name='downloader', log_dir=log_dir)
 
-        universal_logger_init(log_dir=log_dir, log_level=log_level)
+        universal_logger_init(log_name='downloader', log_dir=log_dir, log_level=log_level)
 
         self.log_dir = log_dir
         self.log_level = log_level
@@ -88,18 +82,19 @@ class Downloader:
 
         self.url_batches = url_batches
 
-        print(f'[Downloader] Find {len(self.url_batches)} files downloadable in this profile.')
+        twb_logger.info(f'Find {len(self.url_batches)} files downloadable in this profile.')
 
         if len(self.url_batches) == 0:
             raise Warning("No URLs are found for the given date.")
 
-    def start(self):
+    def start(self, output_dir: str, limit: Union[int, None] = None):
+        """
+        Start the downloader.
+        :param output_dir: The output directory.
+        :param limit: The limit of the number of files to download. (default: None)
+        """
         # Log the version.
         twb_logger.info(f'TWB Package Version: {get_curr_version()}')
-
-        output_dir = self.output_dir
-        num_proc = self.num_proc
-        limit = self.limit
 
         if self.profile is None:
             raise Exception("No profile is assigned to the downloader.")
@@ -113,6 +108,7 @@ class Downloader:
         self.is_started = True
 
         url_batches = self.url_batches
+        num_proc = self.num_proc
 
         # Check the filename locally to avoid overwriting.
         for url in url_batches:
@@ -133,10 +129,10 @@ class Downloader:
             self.is_completed = True
             return
 
-        # Create the output directory if it does not exist.
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        # Prepare the output directory.
+        prepare_output_dir(output_dir)
 
+        # Log the number of files to download.
         twb_logger.info(f'Will download {len(url_batches)} files.')
 
         if self.profile.max_processes is not None:
@@ -151,9 +147,10 @@ class Downloader:
         twb_logger.info(f'Start downloading. (# of assigned processes: {num_proc})')
 
         pm = RDSProcessManager(
-            num_proc=num_proc,
+            log_name='downloader',
             log_dir=self.log_dir,
-            log_level=self.log_level
+            log_level=self.log_level,
+            num_proc=num_proc
         )
 
         curr_finished = 0

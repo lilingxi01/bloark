@@ -10,16 +10,16 @@ from utils.mock_zst_files import get_mock_zst_filenames
 def test_reader_decompress():
     temporary_dir, test_filenames = get_mock_data_dir()
 
-    reader = twb.Reader()
+    reader = twb.Reader(num_proc=4)
     reader.preload(temporary_dir)
 
-    reader.decompress(output_dir='./test/output', num_proc=4)
+    reader.decompress(output_dir='./test/output')
 
     # Test that the decompressed files exist.
     for test_filename in test_filenames:
         assert os.path.exists(os.path.join('./test/output', os.path.split(test_filename)[1][:-4]))
 
-    # TODO: Test the decompressed file content.
+    # TODO: Verify the decompressed file content.
 
     shutil.rmtree('./test/output')
 

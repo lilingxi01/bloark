@@ -8,7 +8,7 @@ download_output_dir = "./test/download_temp"
 
 def test_wiki_history_dump_download():
     # Create a downloader.
-    downloader = twb.Downloader(output_dir=download_output_dir, num_proc=3, limit=4)
+    downloader = twb.Downloader(num_proc=3)
 
     # Prepare to download the wiki history dump.
     downloader.will_download_wiki_history_dump()
@@ -21,7 +21,7 @@ def test_wiki_history_dump_download():
 
     try:
         # Start the downloader.
-        downloader.start()
+        downloader.start(output_dir=download_output_dir, limit=4)
 
         assert downloader.is_started
         assert downloader.is_completed

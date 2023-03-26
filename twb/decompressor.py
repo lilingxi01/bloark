@@ -5,9 +5,9 @@ from typing import Union
 
 import py7zr
 
-from .logger import universal_logger_init, twb_logger, cleanup_logger_dir
+from .logger import universal_logger_init, twb_logger, cleanup_logger
 from .parallelization import RDSProcessManager, RDSProcessController
-from .utils import get_file_list, decompress_zstd, get_curr_version
+from .utils import get_file_list, decompress_zstd, get_curr_version, prepare_output_dir
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
@@ -25,7 +25,6 @@ class Decompressor:
     Preload function accepts a path to a file or a directory, and can be called multiple times (for multiple files).
 
     Attributes:
-        output_dir (str): The output directory.
         num_proc (int): The number of processes to use.
         log_dir (str): The dir to the log file.
         log_level (int): The log level.
@@ -33,17 +32,14 @@ class Decompressor:
     """
 
     def __init__(self,
-                 output_dir: str,
                  log_dir: Union[str, None] = None,
                  num_proc: int = _DEFAULT_NUM_PROC,
                  log_level: int = _DEFAULT_LOG_LEVEL):
         """
-        :param output_dir: the output directory
         :param log_dir: the dir to the log file (default: None)
         :param num_proc: the number of processes to use (default: 1)
         :param log_level: the log level (default: logging.INFO)
         """
-        self.output_dir = output_dir
         self.log_dir = log_dir
         self.num_proc = num_proc
         self.log_level = log_level
@@ -51,10 +47,10 @@ class Decompressor:
         self.files = []
 
         # If log dir exists, remove it first.
-        cleanup_logger_dir(log_dir=log_dir)
+        cleanup_logger(log_name='decompressor', log_dir=log_dir)
 
         # Initialize the logger.
-        universal_logger_init(log_dir=log_dir, log_level=log_level)
+        universal_logger_init(log_name='decompressor', log_dir=log_dir, log_level=log_level)
 
     def preload(self, path: str):
         """
@@ -70,24 +66,28 @@ class Decompressor:
             raise FileNotFoundError('The path does not exist.')
         self.files.extend(get_file_list(path))
 
-    def start(self):
+    def start(self, output_dir: str):
+        """
+        Decompress the files.
+        :param output_dir: the output directory
+        """
         # Log the version.
         twb_logger.info(f'TWB Package Version: {get_curr_version()}')
 
-        output_dir = self.output_dir
         num_proc = self.num_proc
         log_dir = self.log_dir
         log_level = self.log_level
 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        # Prepare the output directory.
+        prepare_output_dir(output_dir)
 
         start_time = time.time()
 
         pm = RDSProcessManager(
-            num_proc=num_proc,
+            log_name='decompressor',
             log_dir=log_dir,
-            log_level=log_level
+            log_level=log_level,
+            num_proc=num_proc
         )
 
         # TODO: Add a error handler to handle the error when decompressing a file or process terminated unexpectedly.

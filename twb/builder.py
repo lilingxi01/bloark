@@ -7,8 +7,9 @@ import py7zr
 import jsonlines
 import uuid
 
-from .logger import universal_logger_init, twb_logger, cleanup_logger_dir
-from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir, get_curr_version
+from .logger import universal_logger_init, twb_logger, cleanup_logger
+from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup_dir, get_curr_version, \
+    prepare_output_dir
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
 
@@ -33,11 +34,36 @@ class Builder:
     Preload function accepts a path to a file or a directory, and can be called multiple times (for multiple files).
 
     Attributes:
+        num_proc (int): The number of processes to use.
+        log_dir (str): The dir to the log file.
+        log_level (int): The log level.
+        revisions_per_block (int): The number of revisions per block.
         files (List[str]): The list of files to be processed. It will be finalized when the build() method is called.
     """
 
-    def __init__(self):
+    def __init__(self,
+                 log_dir: Union[str, None] = None,
+                 num_proc: Union[int, None] = _DEFAULT_NUM_PROC,
+                 revisions_per_block: int = _DEFAULT_REVISIONS_PER_BLOCK,
+                 log_level: int = _DEFAULT_LOG_LEVEL):
+        """
+        :param log_dir: the dir to the log file (default: None) (Will be cleaned up if exists)
+        :param num_proc: the number of processes (default: 1) (Set to None to use all available processes)
+        :param revisions_per_block: the number of revisions per block (default: 300000)
+        :param log_level: the log level (default: logging.DEBUG)
+        """
+        self.log_dir = log_dir
+        self.num_proc = num_proc
+        self.revisions_per_block = revisions_per_block
+        self.log_level = log_level
+
         self.files = []
+
+        # Clean up the log dir if exists.
+        cleanup_logger(log_name='builder', log_dir=log_dir)
+
+        # Initialize the logger.
+        universal_logger_init(log_name='builder', log_dir=log_dir, log_level=log_level)
 
     def preload(self, path: str):
         """
@@ -55,46 +81,32 @@ class Builder:
 
     def build(self,
               output_dir: str,
-              log_dir: Union[str, None] = None,
-              num_proc: Union[int, None] = _DEFAULT_NUM_PROC,
-              revisions_per_block: int = _DEFAULT_REVISIONS_PER_BLOCK,
               start_index: int = _DEFAULT_START_INDEX,
-              log_level: int = _DEFAULT_LOG_LEVEL,
               processor: BlockInteriorProcessor = DefaultBIP(),
               compress: bool = True):
         """
         Build the blocks.
         :param output_dir: the output directory for the blocks (will be created if not exists)
-        :param log_dir: the dir to the log file (default: None) (Will be cleaned up if exists)
-        :param num_proc: the number of processes (default: 1) (Set to None to use all available processes)
-        :param revisions_per_block: the number of revisions per block (default: 300000)
         :param start_index: the starting index of the blocks (default: 0)
-        :param log_level: the log level (default: logging.DEBUG)
         :param processor: the interior processor for blocks (default: DefaultBIP)
         :param compress: whether to compress the blocks (default: True)
         :raise Warning: if there is no file to process
         """
-        zip_file_list = self.files
-
-        # Clean up the log dir if exists.
-        cleanup_logger_dir(log_dir=log_dir)
-
-        # Initialize the logger.
-        universal_logger_init(log_dir=log_dir, log_level=log_level)
-
         # Log the version.
         twb_logger.info(f'TWB Package Version: {get_curr_version()}')
+
+        log_dir = self.log_dir
+        num_proc = self.num_proc
+        revisions_per_block = self.revisions_per_block
+        log_level = self.log_level
+        zip_file_list = self.files
 
         # If there is no file to process, raise a warning and return.
         if len(zip_file_list) == 0:
             raise Warning('There is no file to process.')
 
-        # If output dir exists, remove it first.
-        if os.path.exists(output_dir):
-            cleanup_dir(output_dir)
-
-        # Create the output directory.
-        os.makedirs(output_dir)
+        # Prepare the output directory.
+        prepare_output_dir(output_dir)
 
         # Create the temporary directory.
         temp_dir = os.path.join(output_dir, 'temp')
@@ -132,9 +144,10 @@ class Builder:
         start_time = time.time()
 
         pm = RDSProcessManager(
-            num_proc=num_proc,
+            log_name='builder',
             log_dir=log_dir,
             log_level=log_level,
+            num_proc=num_proc,
             start_index=start_index
         )
         for path in zip_file_list:

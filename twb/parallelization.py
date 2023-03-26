@@ -102,12 +102,12 @@ class RDSProcessController:
                 if len(self.active_pids) >= self.num_proc:
                     try:
                         self.logwarn('Scanning inactive processes...')
-                        inactive_pids = set(self.pid_map.keys()) - set(self.active_pids.copy())
+                        inactive_pids = set(self.pid_map.keys()) - set(self.active_pids)
                         for inactive_pid in inactive_pids:
-                            temp_folder = self.pid_map[pid]
+                            temp_folder = self.pid_map[inactive_pid]
                             if os.path.exists(temp_folder):
                                 dirs_to_be_removed.append((inactive_pid, temp_folder))
-                            del self.pid_map[pid]
+                            del self.pid_map[inactive_pid]
                         # Clear the active process list for preparation of the next possible leak.
                         while len(self.active_pids) > 0:
                             self.active_pids.pop()
@@ -214,14 +214,16 @@ class RDSProcessManager(Generic[_R]):
     Deprecation: disk space limitation feature is sunset in v0.2.0 for the sake of simplicity and process security.
     """
     def __init__(self,
-                 num_proc: Union[int, None] = 1,
+                 log_name: str,
                  log_dir: Union[str, None] = None,
                  log_level: int = logging.DEBUG,
+                 num_proc: Union[int, None] = 1,
                  start_index: int = 0):
         """
-        :param num_proc: the number of processes to be used (default: 1) (None: use all available processes)
+        :param log_name: the name of the log file
         :param log_dir: the dir to the log file (default: None)
-        :param log_level: the log level (default: logging.DEBUG)
+        :param log_level: the log level (default: DEBUG)
+        :param num_proc: the number of processes to be used (default: 1) (None: use all available processes)
         :param start_index: the start index of the process
         """
         self.num_proc = num_proc
@@ -231,7 +233,7 @@ class RDSProcessManager(Generic[_R]):
         # For process security, we will use only 1 process if num_proc is None.
         final_num_proc = num_proc if num_proc is not None else (os.cpu_count() or 1)
 
-        ql, q = mp_logger_init(log_dir=log_dir, log_level=log_level)
+        ql, q = mp_logger_init(log_name=log_name, log_dir=log_dir, log_level=log_level)
         self.queue_listener = ql  # Will need to stop it in the end.
 
         manager = Manager()

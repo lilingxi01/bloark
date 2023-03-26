@@ -173,3 +173,9 @@ def cleanup_dir(path: str, onerror: Union[Callable, None] = _rmtree_error_handle
         except Exception as e:
             twb_logger.error(f"Error occurred while removing: {path}. Check next log for details.")
             twb_logger.error(e)
+
+
+def prepare_output_dir(output_dir: str):
+    if os.path.exists(output_dir):
+        cleanup_dir(output_dir)
+    os.makedirs(output_dir)

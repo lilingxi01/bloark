@@ -16,37 +16,40 @@ def _get_logger_stream_handler() -> logging.StreamHandler:
     return stream_handler
 
 
-def _get_logger_file_handler(log_dir: str) -> Union[logging.FileHandler, None]:
+def _get_logger_file_handler(log_name: str, log_dir: str) -> Union[logging.FileHandler, None]:
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, 'process.log')
+        log_path = os.path.join(log_dir, f'{log_name}.log')
         file_handler = logging.FileHandler(filename=log_path, mode='a')
         file_handler.setFormatter(_formatter)
         return file_handler
     return None
 
 
-def cleanup_logger_dir(log_dir: str):
+def cleanup_logger(log_name: str, log_dir: str):
     if log_dir is not None and os.path.exists(log_dir):
+        log_file_path = os.path.join(log_dir, f'{log_name}.log')
+        if not os.path.exists(log_file_path):
+            return
         try:
-            shutil.rmtree(log_dir)
+            os.remove(log_file_path)
         except Exception as e:
-            logging.error(f'Error occurred while cleaning up the log directory {log_dir}: {e}')
+            logging.error(f'Error occurred while cleaning up the log file {log_file_path}: {e}')
 
 
-def clean_up_logger(logger: logging.Logger):
+def _cleanup_logger_handlers(logger: logging.Logger):
     while logger.hasHandlers():
         logger.removeHandler(logger.handlers[0])
 
 
-def universal_logger_init(log_dir: str, log_level: int = logging.DEBUG):
+def universal_logger_init(log_name: str, log_dir: str, log_level: int = logging.DEBUG):
     stream_handler = _get_logger_stream_handler()
-    file_handler = _get_logger_file_handler(log_dir=log_dir)
+    file_handler = _get_logger_file_handler(log_name=log_name, log_dir=log_dir)
 
     logger = logging.getLogger()
 
     # Clean up any existing handlers in default logger.
-    clean_up_logger(logger)
+    _cleanup_logger_handlers(logger)
 
     logger.setLevel(log_level)
     logger.addHandler(stream_handler)
@@ -54,11 +57,11 @@ def universal_logger_init(log_dir: str, log_level: int = logging.DEBUG):
         logger.addHandler(file_handler)
 
 
-def mp_logger_init(log_dir: str, log_level: int = logging.DEBUG) -> (QueueListener, mp.Queue):
+def mp_logger_init(log_name: str, log_dir: str, log_level: int = logging.DEBUG) -> (QueueListener, mp.Queue):
     q = mp.Queue()
 
     stream_handler = _get_logger_stream_handler()
-    file_handler = _get_logger_file_handler(log_dir=log_dir)
+    file_handler = _get_logger_file_handler(log_name=log_name, log_dir=log_dir)
 
     if file_handler is not None:
         ql = QueueListener(q, stream_handler, file_handler)
@@ -81,7 +84,7 @@ def mp_child_logger_init(q: mp.Queue, log_level: int = logging.DEBUG):
     logger = logging.getLogger()
 
     # Clean up any existing handlers in subprocess default logger.
-    clean_up_logger(logger)
+    _cleanup_logger_handlers(logger)
 
     logger.setLevel(log_level)
     logger.addHandler(qh)

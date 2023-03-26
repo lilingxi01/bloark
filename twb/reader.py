@@ -4,9 +4,9 @@ from typing import Union
 import time
 
 from .modifier import Modifier
-from .logger import cleanup_logger_dir, universal_logger_init, twb_logger
+from .logger import cleanup_logger, universal_logger_init, twb_logger
 from .parallelization import RDSProcessManager
-from .utils import get_file_list, decompress_zstd, cleanup_dir
+from .utils import get_file_list, decompress_zstd, prepare_output_dir, get_curr_version
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
@@ -50,10 +50,10 @@ class Reader:
         self.modifiers = []
 
         # If log dir exists, remove it first.
-        cleanup_logger_dir(log_dir=log_dir)
+        cleanup_logger(log_name='reader', log_dir=log_dir)
 
         # Initialize the logger.
-        universal_logger_init(log_dir=log_dir, log_level=log_level)
+        universal_logger_init(log_name='reader', log_dir=log_dir, log_level=log_level)
 
     def preload(self, path: str):
         """
@@ -84,20 +84,23 @@ class Reader:
         Decompress the selected files.
         :param output_dir: the directory to store the decompressed files
         """
+        # Log the version.
+        twb_logger.info(f'TWB Package Version: {get_curr_version()}')
+
         num_proc = self.num_proc
         log_dir = self.log_dir
         log_level = self.log_level
 
-        if os.path.exists(output_dir):
-            cleanup_dir(output_dir)
-        os.makedirs(output_dir)
+        # Prepare the output directory.
+        prepare_output_dir(output_dir)
 
         start_time = time.time()
 
         pm = RDSProcessManager(
-            num_proc=num_proc,
+            log_name='decompress',
             log_dir=log_dir,
-            log_level=log_level
+            log_level=log_level,
+            num_proc=num_proc
         )
         for file in self.files:
             pm.apply_async(
