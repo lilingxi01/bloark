@@ -77,12 +77,30 @@ class Reader:
         Take a glimpse of the data.
         It could still be large if one object contains a lot of information (e.g. many revisions, long article).
         """
-        # TODO: Implement this.
-        #  It should be the same as reading the data, but only take the first file and the first block.
-        pass
+        if len(self.files) == 0:
+            twb_logger.warning('No file is loaded.')
+            return
 
-    def decompress(self,
-                   output_dir: str):
+        # Prepare the temporary directory for glimpse.
+        glimpse_path = self.files[0]
+        glimpse_temp_dir = os.path.join(os.getcwd(), '.glimpse')
+        os.makedirs(glimpse_temp_dir, exist_ok=True)
+
+        # Decompress the file.
+        decompressed_path = _decompress_executor(glimpse_path, glimpse_temp_dir)
+        first_block_text = read_line_in_file(decompressed_path, 0).rstrip('\n')
+
+        if first_block_text[0] != '{' or first_block_text[-1] != '}':
+            twb_logger.error(f'Invalid starting of block or end of block.')
+            return
+
+        # Read the first block into memory and then delete the decompressed file.
+        first_block = json.loads(first_block_text)
+        cleanup_dir(glimpse_temp_dir)
+
+        return first_block
+
+    def decompress(self, output_dir: str):
         """
         Decompress the selected files.
         :param output_dir: the directory to store the decompressed files
@@ -130,6 +148,8 @@ class Reader:
         # Log the version.
         twb_logger.info(f'TWB Package Version: {get_curr_version()}')
 
+        start_time = time.time()
+
         # Prepare the output directory.
         prepare_output_dir(output_dir)
 
@@ -147,6 +167,8 @@ class Reader:
 
         for file_path in self.files:
             twb_logger.info(f'Start: {file_path}')
+
+            file_start_time = time.time()
 
             # Create temporary directory for this file.
             temp_id = uuid.uuid4().hex
@@ -197,7 +219,10 @@ class Reader:
             # Clean up the temporary directory at this step.
             cleanup_dir(temp_dir)
 
-            twb_logger.info(f'Finished: {file_path}')
+            file_end_time = time.time()
+            file_execution_duration = file_end_time - file_start_time
+
+            twb_logger.info(f'Finished: {file_path} -- (took {file_execution_duration:.2f}s)')
 
             # Log the progress.
             curr_count += 1
@@ -206,8 +231,11 @@ class Reader:
         # Clean up the global temporary directory.
         cleanup_dir(global_temp_dir)
 
+        end_time = time.time()
+        execution_duration = end_time - start_time
+
         # Log the end of the task.
-        twb_logger.info('All done! Finished all files.')
+        twb_logger.info(f'All done! Finished all files. (took {execution_duration:.2f}s in total)')
 
 
 def _decompress_executor(path: str, output_dir: str) -> str:
@@ -245,6 +273,8 @@ def _modify_executor(controller: RDSProcessController,
     :param target_path: the directory to store the modified files
     :param modifiers: the list of modifiers to be applied
     """
+    start_time = time.time()
+
     controller.logdebug(f'Processing block: {position}')
     block_text = read_line_in_file(path, position).rstrip('\n')
     if block_text[0] != '{' or block_text[-1] != '}':
@@ -258,11 +288,14 @@ def _modify_executor(controller: RDSProcessController,
     for modifier in modifiers:
         block = modifier.modify(block)
 
-    controller.logdebug(f'Finished block: {position}')
-
     with controller.parallel_lock:
         try:
             with open(target_path, 'a') as f:
                 f.write(json.dumps(block) + '\n')
         except Exception as e:
             controller.logerr(f'Error occurred when writing block to file: {e}')
+
+    end_time = time.time()
+    execution_duration = end_time - start_time
+
+    controller.logdebug(f'Finished block: {position} -- (took {execution_duration:.2f}s)')
