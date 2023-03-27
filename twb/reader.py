@@ -72,19 +72,26 @@ class Reader:
             raise FileNotFoundError('The path does not exist.')
         self.files.extend(get_file_list(path))
 
-    def glimpse(self):
+    def glimpse(self) -> Union[dict, None]:
         """
         Take a glimpse of the data.
         It could still be large if one object contains a lot of information (e.g. many revisions, long article).
         """
         if len(self.files) == 0:
             twb_logger.warning('No file is loaded.')
-            return
+            return None
+
+        # Randomly select a file.
+        picked_index = int(uuid.uuid4().int % len(self.files))
+        glimpse_path = self.files[picked_index]
+
+        twb_logger.info(f'Randomly chosen file: {glimpse_path}')
 
         # Prepare the temporary directory for glimpse.
-        glimpse_path = self.files[0]
         glimpse_temp_dir = os.path.join(os.getcwd(), '.glimpse')
         os.makedirs(glimpse_temp_dir, exist_ok=True)
+
+        twb_logger.info(f'Decompressing...')
 
         # Decompress the file.
         decompressed_path = _decompress_executor(glimpse_path, glimpse_temp_dir)
@@ -92,11 +99,13 @@ class Reader:
 
         if first_block_text[0] != '{' or first_block_text[-1] != '}':
             twb_logger.error(f'Invalid starting of block or end of block.')
-            return
+            return None
 
         # Read the first block into memory and then delete the decompressed file.
         first_block = json.loads(first_block_text)
         cleanup_dir(glimpse_temp_dir)
+
+        twb_logger.info(f'Glimpse finished.')
 
         return first_block
 
@@ -278,7 +287,7 @@ def _modify_executor(controller: RDSProcessController,
     controller.logdebug(f'Processing block: {position}')
     block_text = read_line_in_file(path, position).rstrip('\n')
     if block_text[0] != '{' or block_text[-1] != '}':
-        controller.logerr(f'Invalid starting of block or end of block: {block}')
+        controller.logerr(f'Invalid starting of block or end of block: {path} @ {position}')
         return
 
     # Parse the block from text to JSON.
