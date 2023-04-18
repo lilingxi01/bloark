@@ -2,14 +2,14 @@ import json
 import logging
 import os
 import uuid
-from typing import Union, List
+from typing import Union, List, Tuple
 import time
 
 from .modifier import Modifier
 from .logger import cleanup_logger, universal_logger_init, twb_logger
 from .parallelization import RDSProcessManager, RDSProcessController
 from .utils import get_file_list, decompress_zstd, prepare_output_dir, get_curr_version, get_line_positions, \
-    cleanup_dir, read_line_in_file, compress_zstd, COMPRESSION_EXTENSION
+    cleanup_dir, read_line_in_file, compress_zstd, COMPRESSION_EXTENSION, parse_schema
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.DEBUG
@@ -72,7 +72,7 @@ class Reader:
             raise FileNotFoundError('The path does not exist.')
         self.files.extend(get_file_list(path))
 
-    def glimpse(self) -> Union[dict, None]:
+    def glimpse(self) -> Union[Tuple[dict, dict], Tuple[None, None]]:
         """
         Take a glimpse of the data.
         It could still be large if one object contains a lot of information (e.g. many revisions, long article).
@@ -99,7 +99,7 @@ class Reader:
 
         if first_block_text[0] != '{' or first_block_text[-1] != '}':
             twb_logger.error(f'Invalid starting of block or end of block.')
-            return None
+            return None, None
 
         # Read the first block into memory and then delete the decompressed file.
         first_block = json.loads(first_block_text)
@@ -107,7 +107,7 @@ class Reader:
 
         twb_logger.info(f'Glimpse finished.')
 
-        return first_block
+        return first_block, parse_schema(first_block)
 
     def decompress(self, output_dir: str):
         """
@@ -295,14 +295,21 @@ def _modify_executor(controller: RDSProcessController,
 
     # Apply the modifiers.
     for modifier in modifiers:
+        if block is None:
+            break
         block = modifier.modify(block)
 
-    with controller.parallel_lock:
-        try:
-            with open(target_path, 'a') as f:
-                f.write(json.dumps(block) + '\n')
-        except Exception as e:
-            controller.logerr(f'Error occurred when writing block to file: {e}')
+    # We write the output only if the block is not None. Otherwise, we remove this block.
+    if block is not None:
+        with controller.parallel_lock:
+            try:
+                with open(target_path, 'a') as f:
+                    f.write(json.dumps(block) + '\n')
+            except Exception as e:
+                controller.logerr(f'Error occurred when writing block to file: {e}')
+
+    else:
+        controller.logdebug(f'Removed block because of "None": {position}')
 
     end_time = time.time()
     execution_duration = end_time - start_time

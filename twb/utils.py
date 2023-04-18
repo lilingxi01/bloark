@@ -43,7 +43,7 @@ def get_file_list(input_path: str) -> List[str]:
             file_path = os.path.join(root, file)
             all_files.append(file_path)
 
-    # Remove duplicate files.
+    # Remove duplicate files. Sort them for determinism.
     all_files = sorted(list(set(all_files)))
     return all_files
 
@@ -184,3 +184,19 @@ def prepare_output_dir(output_dir: str):
     if os.path.exists(output_dir):
         cleanup_dir(output_dir)
     os.makedirs(output_dir)
+
+
+def parse_schema(obj):
+    """
+    Parse the schema of the given object. Used for glimpse.
+    """
+    if isinstance(obj, dict):
+        if not obj:
+            return "empty"
+        return {key: parse_schema(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        if not obj:
+            return "empty"
+        return [parse_schema(obj[0]), len(obj)]
+    else:
+        return type(obj).__name__
