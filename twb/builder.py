@@ -4,7 +4,7 @@ import time
 from typing import List, Union, Callable
 import xmltodict
 import py7zr
-import jsonlines
+import json
 import uuid
 
 from .logger import universal_logger_init, twb_logger, cleanup_logger
@@ -258,6 +258,8 @@ def _file_processor(controller: RDSProcessController,
             nonlocal total_article_count, total_block_count, total_revision_count
             nonlocal revision_count, memory_usage_records, all_memory_usage_records, curr_output_path
 
+            controller.logdebug('_super_callback() called.')
+
             # If previous batch is full, store the max memory usage and reset the counters.
             if revision_count >= revisions_per_block:
                 # Store the max memory usage in previous batch.
@@ -280,16 +282,26 @@ def _file_processor(controller: RDSProcessController,
             total_revision_count += curr_article_revision_count
             total_article_count += 1
 
+            controller.logdebug(f'Total revision count: {total_revision_count}')
+
             # Store the article into the current output file.
             _store_article_to_jsonl(article=article, output_path=curr_output_path)
 
+            controller.logdebug(f'Stored.')
+
             # Record the memory usage.
             memory_usage_records.append(get_memory_consumption())
+
+            controller.logdebug(f'Memory: {memory_usage_records[-1]} MB')
+
+        controller.logdebug(f'Big parsing loop started. (revisions_per_block={revisions_per_block})')
 
         # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
         # Therefore, we don't have to keep all the results in the memory, which is a huge problem.
         for path in decompressed_files:
             _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
+
+        controller.logdebug('Big parsing loop done.')
 
         if len(memory_usage_records) > 0:
             all_memory_usage_records.append(max(memory_usage_records))
@@ -300,15 +312,21 @@ def _file_processor(controller: RDSProcessController,
 
         cleanup_dir(decompression_temp_dir)  # Delete temporary files used for decompression.
 
+        controller.logdebug(f'Cleaning up decompression temp dir done.')
+
         if should_compress:
             # Store the results to JSONL files.
             json_files = get_file_list(compression_temp_dir)
 
+            controller.logdebug(f'Compression started. {len(json_files)} files to compress.')
+
             # Compress the files.
             for json_file in json_files:
+                controller.logdebug(f'Compressing {json_file}...')
                 _compress_file(path=json_file, output_dir=output_dir, controller=controller)
 
             controller.logdebug(f'Compression done. {len(json_files)} files compressed in total.')
+
     except Exception as e:
         controller.logerr(f'Parsing failed at {path}:', e)
     finally:
@@ -342,11 +360,17 @@ def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_ca
     if item_type is not dict:
         return True
 
-    processed_item = processor.parse(tag=tag_name, meta={}, tree=item)
+    logging.debug(f'Start callback: <{tag_name}>.')
+
+    # processed_item = processor.parse(tag=tag_name, meta={}, tree=item)
 
     # If the item is not None, it means that the item is a block and we should append it to the results.
-    if processed_item is not None:
-        super_callback(processed_item)
+    # if processed_item is not None:
+    #     pass
+
+    super_callback(item)
+
+    logging.debug(f'Callback done: <{tag_name}>.')
 
     return True
 
@@ -365,6 +389,8 @@ def _parse_xml(path: str, processor: BlockInteriorProcessor, super_callback: Cal
             item_callback=lambda x, y: _xml_parser_callback(x, y, processor, super_callback)
         )
 
+        logging.debug(f'Parsing done: {path}')
+
 
 def _store_article_to_jsonl(article: dict, output_path: str):
     """
@@ -373,8 +399,16 @@ def _store_article_to_jsonl(article: dict, output_path: str):
     :param output_path: the path to store the JSONL file
     :return: the list of JSONL file paths
     """
-    with jsonlines.open(output_path, 'a') as writer:
-        writer.write(article)
+    logging.debug(f'Dumping JSONL for {output_path}...')
+    dumped_article_jsonl = json.dumps(article) + '\n'
+    logging.debug(f'Storing JSONL (len: {len(dumped_article_jsonl)}) to {output_path}...')
+    try:
+        with open(output_path, 'a', buffering=10 * 1024 * 1024) as f:
+            logging.debug(f'Writing to {output_path}...')
+            f.write(dumped_article_jsonl)
+    except Exception as e:
+        logging.fatal(f'Error in writing article: {e}')
+    logging.debug(f'Storing JSONL done: {output_path}.')
 
 
 def _compress_file(path: str, output_dir: str, controller: RDSProcessController):

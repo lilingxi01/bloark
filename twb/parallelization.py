@@ -83,51 +83,6 @@ class RDSProcessController:
             self.logfatal(f'Failed to register the process: {e}')
             return
 
-        # Count the number of inactive processes being removed. (for logging)
-        dirs_to_be_removed = []
-
-        # Acquire parallel lock so that other processes will not do the same thing again under the same condition.
-        with self.parallel_lock:
-            # We initialize the active process list count when the number of possible processes exceeds the desired
-            # number of processes or when we are already counting the number of active processes.
-            if len(self.active_pids) > 0 or len(self.pid_map.keys()) > self.num_proc:
-                try:
-                    if pid in self.active_pids:
-                        self.active_pids.remove(pid)
-                    self.active_pids.append(pid)
-                except Exception as e:
-                    self.logfatal(f'Failed to update active_pids: {e}')
-                    return
-
-                # Remove the inactive processes when the number of active processes reaches the desired number.
-                if len(self.active_pids) >= self.num_proc:
-                    try:
-                        self.logwarn('Scanning inactive processes...')
-                        inactive_pids = set(self.pid_map.keys()) - set(self.active_pids)
-                        for inactive_pid in inactive_pids:
-                            temp_folder = self.pid_map[inactive_pid]
-                            if os.path.exists(temp_folder):
-                                dirs_to_be_removed.append((inactive_pid, temp_folder))
-                            del self.pid_map[inactive_pid]
-                        # Clear the active process list for preparation of the next possible leak.
-                        while len(self.active_pids) > 0:
-                            self.active_pids.pop()
-                    except Exception as e:
-                        self.logfatal(f'Failed to scan inactive processes: {e}')
-                        return
-
-        # Cleanup the temporary directories without lock, so that the lock will not be held for a long time.
-
-        try:
-            if len(dirs_to_be_removed) > 0:
-                self.logwarn(f'Cleaning up {len(dirs_to_be_removed)} inactive processes...')
-            for dir_to_be_removed in dirs_to_be_removed:
-                inactive_pid, broken_dir = dir_to_be_removed
-                self.logwarn(f'Removing temporary directory for pid: {inactive_pid}')
-                cleanup_dir(broken_dir)
-        except Exception as e:
-            self.logfatal(f'Failed to clean up inactive processes: {e}')
-
     def unregister(self):
         """
         Unregister the process.

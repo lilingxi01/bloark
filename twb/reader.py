@@ -221,12 +221,18 @@ class Reader:
             pm.close()
             pm.join()
 
+            twb_logger.info(f'Finished modifying {len(line_positions)} blocks. Compressing...')
+
             # Compress the file.
             output_path = os.path.join(output_dir, os.path.basename(target_path) + COMPRESSION_EXTENSION)
             compress_zstd(target_path, output_path)
 
+            twb_logger.info(f'Finished compressing. Cleaning up...')
+
             # Clean up the temporary directory at this step.
             cleanup_dir(temp_dir)
+
+            twb_logger.info(f'Finished cleaning up.')
 
             file_end_time = time.time()
             file_execution_duration = file_end_time - file_start_time
@@ -302,12 +308,13 @@ def _modify_executor(controller: RDSProcessController,
     # We write the output only if the block is not None. Otherwise, we remove this block.
     if block is not None:
         with controller.parallel_lock:
+            logging.debug(f'Storing JSONL to {target_path}...')
             try:
-                with open(target_path, 'a') as f:
+                with open(target_path, 'a', buffering=1) as f:
                     f.write(json.dumps(block) + '\n')
             except Exception as e:
                 controller.logerr(f'Error occurred when writing block to file: {e}')
-
+            logging.debug(f'Storing JSONL done: {target_path}.')
     else:
         controller.logdebug(f'Removed block because of "None": {position}')
 

@@ -128,7 +128,7 @@ def get_estimated_size(path: str) -> int:
 def get_memory_consumption() -> int:
     process = psutil.Process(os.getpid())
     memory_usage_mb = process.memory_info().rss / 1024 / 1024
-    return round(memory_usage_mb, 3)
+    return round(memory_usage_mb, 2)
 
 
 def get_line_positions(path: str):
