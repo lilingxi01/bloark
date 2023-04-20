@@ -9,18 +9,20 @@ _log_format = "[%(asctime)s (%(process)d) %(levelname)s] %(message)s"
 _formatter = logging.Formatter(_log_format)
 
 
-def _get_logger_stream_handler() -> logging.StreamHandler:
+def _get_logger_stream_handler(log_level: int) -> logging.StreamHandler:
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(_formatter)
+    stream_handler.setLevel(log_level)
     return stream_handler
 
 
-def _get_logger_file_handler(log_name: str, log_dir: str) -> Union[logging.FileHandler, None]:
+def _get_logger_file_handler(log_name: str, log_dir: str, log_level: int) -> Union[logging.FileHandler, None]:
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, f'{log_name}.log')
         file_handler = logging.FileHandler(filename=log_path, mode='a')
         file_handler.setFormatter(_formatter)
+        file_handler.setLevel(log_level)
         return file_handler
     return None
 
@@ -41,26 +43,25 @@ def _cleanup_logger_handlers(logger: logging.Logger):
         logger.removeHandler(logger.handlers[0])
 
 
-def universal_logger_init(log_name: str, log_dir: str, log_level: int = logging.DEBUG):
-    stream_handler = _get_logger_stream_handler()
-    file_handler = _get_logger_file_handler(log_name=log_name, log_dir=log_dir)
+def universal_logger_init(log_name: str, log_dir: str, log_level: int = logging.INFO):
+    stream_handler = _get_logger_stream_handler(log_level=log_level)
+    file_handler = _get_logger_file_handler(log_name=log_name, log_dir=log_dir, log_level=log_level)
 
     logger = logging.getLogger()
 
     # Clean up any existing handlers in default logger.
     _cleanup_logger_handlers(logger)
 
-    logger.setLevel(log_level)
     logger.addHandler(stream_handler)
     if file_handler is not None:
         logger.addHandler(file_handler)
 
 
-def mp_logger_init(log_name: str, log_dir: str, log_level: int = logging.DEBUG) -> (QueueListener, mp.Queue):
+def mp_logger_init(log_name: str, log_dir: str, log_level: int = logging.INFO) -> (QueueListener, mp.Queue):
     q = mp.Queue()
 
-    stream_handler = _get_logger_stream_handler()
-    file_handler = _get_logger_file_handler(log_name=log_name, log_dir=log_dir)
+    stream_handler = _get_logger_stream_handler(log_level=log_level)
+    file_handler = _get_logger_file_handler(log_name=log_name, log_dir=log_dir, log_level=log_level)
 
     if file_handler is not None:
         ql = QueueListener(q, stream_handler, file_handler)
@@ -78,7 +79,7 @@ def mp_logger_init(log_name: str, log_dir: str, log_level: int = logging.DEBUG) 
     return ql, q
 
 
-def mp_child_logger_init(q: mp.Queue, log_level: int = logging.DEBUG):
+def mp_child_logger_init(q: mp.Queue, log_level: int = logging.INFO):
     qh = QueueHandler(q)
     logger = logging.getLogger()
 

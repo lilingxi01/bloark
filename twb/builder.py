@@ -13,7 +13,7 @@ from .utils import get_file_list, compress_zstd, get_memory_consumption, cleanup
 from .bip import BlockInteriorProcessor, DefaultBIP
 from .parallelization import RDSProcessManager, RDSProcessController
 
-_DEFAULT_REVISIONS_PER_BLOCK = 300000
+_DEFAULT_REVISIONS_PER_BLOCK = 1000000
 _DEFAULT_START_INDEX = 0
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.DEBUG
@@ -237,7 +237,9 @@ def _file_processor(controller: RDSProcessController,
             Get the path of the next output file.
             """
             nonlocal controller, compression_target_dir
+            controller.logdebug('Ready to declare index (cp).')
             curr_index = str(controller.declare_index()).zfill(8)  # 8 digits in total for scalability.
+            controller.logdebug('Done declaring index (cp).')
             return os.path.join(compression_target_dir, f'block_{curr_index}.jsonl')
 
         compression_target_dir = compression_temp_dir if should_compress else output_dir
@@ -255,10 +257,12 @@ def _file_processor(controller: RDSProcessController,
             """
             The super callback for the XML parser. It will be called recursively for each article.
             """
+            controller.logdebug('_super_callback() calling.')
+
             nonlocal total_article_count, total_block_count, total_revision_count
             nonlocal revision_count, memory_usage_records, all_memory_usage_records, curr_output_path
 
-            controller.logdebug('_super_callback() called.')
+            controller.logdebug('_super_callback() started.')
 
             # If previous batch is full, store the max memory usage and reset the counters.
             if revision_count >= revisions_per_block:
@@ -299,7 +303,7 @@ def _file_processor(controller: RDSProcessController,
         # We store articles into JSONL files in a streaming manner, along the way of parsing XML files.
         # Therefore, we don't have to keep all the results in the memory, which is a huge problem.
         for path in decompressed_files:
-            _parse_xml(path=path, processor=block_interior_processor, super_callback=_super_callback)
+            _parse_xml(xml_path=path, processor=block_interior_processor, super_callback=_super_callback)
 
         controller.logdebug('Big parsing loop done.')
 
@@ -341,55 +345,43 @@ def _file_processor(controller: RDSProcessController,
         controller.unregister()
 
 
-def _xml_parser_callback(path, item, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
-    """
-    The callback function for the XML parser.
-    :param path: the path of the current item
-    :param item: children dictionary
-    :param processor: the interior processor for blocks
-    :return: True if the parsing should continue, False otherwise
-    """
-    tag_name = path[-1][0]
-    item_type = type(item)
-
-    # If the item is a page, we don't need to process it.
-    if tag_name != 'page':
-        return True
-
-    # If the item is not a dictionary, it means that the item is a leaf node, and we don't expect it to be a block.
-    if item_type is not dict:
-        return True
-
-    logging.debug(f'Start callback: <{tag_name}>.')
-
-    # processed_item = processor.parse(tag=tag_name, meta={}, tree=item)
-
-    # If the item is not None, it means that the item is a block and we should append it to the results.
-    # if processed_item is not None:
-    #     pass
-
-    super_callback(item)
-
-    logging.debug(f'Callback done: <{tag_name}>.')
-
-    return True
-
-
-def _parse_xml(path: str, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
+def _parse_xml(xml_path: str, processor: BlockInteriorProcessor, super_callback: Callable[[dict], None]):
     """
     Parse the XML file into a list of JSON objects.
-    :param path: the path of the XML file
+    :param xml_path: the path of the XML file
     :param processor: the interior processor for blocks
     :return: the list of parsed results
     """
-    with open(path, 'rb') as xml_file:
+    def _inner_callback(path, item):
+        nonlocal super_callback
+
+        tag_name = path[-1][0]
+        item_type = type(item)
+
+        # If the item is a page, we don't need to process it.
+        if tag_name != 'page':
+            return True
+
+        # If the item is not a dictionary, it means that the item is a leaf node, and we don't expect it to be a block.
+        if item_type is not dict:
+            return True
+
+        logging.debug(f'Memory: {get_memory_consumption()} MB')
+
+        logging.debug(f'Start callback: <{tag_name}>.')
+        super_callback(item)
+        logging.debug(f'Callback done: <{tag_name}>.')
+
+        return True
+
+    with open(xml_path, 'rb') as xml_file:
         xmltodict.parse(
             xml_file,
             item_depth=processor.read_depth,
-            item_callback=lambda x, y: _xml_parser_callback(x, y, processor, super_callback)
+            item_callback=_inner_callback,
         )
 
-        logging.debug(f'Parsing done: {path}')
+        logging.debug(f'Parsing done: {xml_path}')
 
 
 def _store_article_to_jsonl(article: dict, output_path: str):

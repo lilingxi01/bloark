@@ -5,6 +5,7 @@ import py7zr
 import shutil
 import psutil
 from importlib.metadata import version, PackageNotFoundError
+import multiprocessing as mp
 
 from twb.logger import twb_logger
 
@@ -126,7 +127,7 @@ def get_estimated_size(path: str) -> int:
 
 
 def get_memory_consumption() -> int:
-    process = psutil.Process(os.getpid())
+    process = psutil.Process(mp.current_process().pid)
     memory_usage_mb = process.memory_info().rss / 1024 / 1024
     return round(memory_usage_mb, 2)
 

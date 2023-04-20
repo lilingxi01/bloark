@@ -13,7 +13,8 @@ from .utils import cleanup_dir
 global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map, _active_pids
 
 
-def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, inner_curr_count, pid_map, active_pids):
+def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, inner_curr_count, pid_map, active_pids,
+                 log_level):
     global _parallel_lock, _logger_lock, _curr_index, _curr_count, _pid_map, _active_pids
     _parallel_lock = inner_parallel_lock
     _logger_lock = inner_logger_lock
@@ -23,7 +24,7 @@ def _init_worker(q, inner_parallel_lock, inner_logger_lock, inner_curr_index, in
     _active_pids = active_pids
 
     # Initialize the logger within the sub-process.
-    mp_child_logger_init(q)
+    mp_child_logger_init(q, log_level=log_level)
 
     # Log the initialization of the process.
     twb_logger.debug('Process initialized.')
@@ -206,7 +207,7 @@ class RDSProcessManager(Generic[_R]):
         self.pool = Pool(
             processes=final_num_proc,
             initializer=_init_worker,
-            initargs=(q, parallel_lock, logger_lock, curr_index, curr_count, pid_map, active_pids)
+            initargs=(q, parallel_lock, logger_lock, curr_index, curr_count, pid_map, active_pids, log_level)
         )
 
     def apply_async(self,
