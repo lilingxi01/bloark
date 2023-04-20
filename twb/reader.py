@@ -9,7 +9,7 @@ from .modifier import Modifier
 from .logger import cleanup_logger, universal_logger_init, twb_logger
 from .parallelization import RDSProcessManager, RDSProcessController
 from .utils import get_file_list, decompress_zstd, prepare_output_dir, get_curr_version, get_line_positions, \
-    cleanup_dir, read_line_in_file, compress_zstd, COMPRESSION_EXTENSION, parse_schema
+    cleanup_dir, read_line_in_file, compress_zstd, COMPRESSION_EXTENSION, parse_schema, get_memory_consumption
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.DEBUG
@@ -290,31 +290,37 @@ def _modify_executor(controller: RDSProcessController,
     """
     start_time = time.time()
 
-    controller.logdebug(f'Processing block: {position}')
+    controller.logdebug(f'Processing block: {position} (Memory: {get_memory_consumption()} MB)')
     block_text = read_line_in_file(path, position).rstrip('\n')
     if block_text[0] != '{' or block_text[-1] != '}':
         controller.logerr(f'Invalid starting of block or end of block: {path} @ {position}')
         return
 
     # Parse the block from text to JSON.
+    controller.logdebug(f'Loading previous JSONL... (Memory: {get_memory_consumption()} MB)')
     block = json.loads(block_text)
+    controller.logdebug(f'Loaded successfully. (Memory: {get_memory_consumption()} MB)')
 
     # Apply the modifiers.
     for modifier in modifiers:
         if block is None:
             break
+        controller.logdebug(f'Applying modifier... (Memory: {get_memory_consumption()} MB)')
         block = modifier.modify(block)
+        controller.logdebug(f'Modified successfully. (Memory: {get_memory_consumption()} MB)')
 
     # We write the output only if the block is not None. Otherwise, we remove this block.
     if block is not None:
-        with controller.parallel_lock:
-            logging.debug(f'Storing JSONL to {target_path}...')
-            try:
-                with open(target_path, 'a', buffering=1) as f:
-                    f.write(json.dumps(block) + '\n')
-            except Exception as e:
-                controller.logerr(f'Error occurred when writing block to file: {e}')
-            logging.debug(f'Storing JSONL done: {target_path}.')
+        controller.logdebug(f'(LOCKING) Preparing to store... (Memory: {get_memory_consumption()} MB)')
+        controller.parallel_lock.acquire()
+        controller.logdebug(f'(LOCKED) Storing JSONL to {target_path}... (Memory: {get_memory_consumption()} MB)')
+        try:
+            with open(target_path, 'a', buffering=10 * 1024 * 1024) as f:
+                f.write(json.dumps(block) + '\n')
+        except Exception as e:
+            controller.logerr(f'Error occurred when writing block to file: {e}')
+        controller.parallel_lock.release()
+        controller.logdebug(f'(RELEASE) Storing JSONL done: {target_path}. (Memory: {get_memory_consumption()} MB)')
     else:
         controller.logdebug(f'Removed block because of "None": {position}')
 
