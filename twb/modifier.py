@@ -55,7 +55,7 @@ class Modifier:
         self.files: List[str] = []
         self.modifiers: List[ModifierProfile] = []
 
-        _init_logger_main_process(name='modifier', log_level=self.log_level)
+        _init_logger_main_process(log_level=self.log_level)
 
     def preload(self, path: str):
         """

@@ -18,7 +18,7 @@ def _cleanup_logger_handlers(logger: logging.Logger):
         logger.removeHandler(logger.handlers[0])
 
 
-def _init_logger_main_process(name: str, log_level: int):
+def _init_logger_main_process(log_level: int):
     stream_handler = _get_logger_stream_handler(log_level=log_level)
     logger = logging.getLogger()
     _cleanup_logger_handlers(logger)
