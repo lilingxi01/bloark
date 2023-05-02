@@ -41,12 +41,12 @@ class Reader:
                  num_proc: int = _DEFAULT_NUM_PROC,
                  log_level: int = _DEFAULT_LOG_LEVEL):
         """
-        :param log_dir: the dir to the log file (default: None)
         :param num_proc: the number of processes to use (default: 1)
+        :param log_dir: the dir to the log file (default: None)
         :param log_level: the log level (default: logging.INFO)
         """
-        self.log_dir = log_dir
         self.num_proc = num_proc
+        self.log_dir = log_dir
         self.log_level = log_level
 
         self.files = []
@@ -79,7 +79,7 @@ class Reader:
         """
         if len(self.files) == 0:
             twb_logger.warning('No file is loaded.')
-            return None
+            return None, None
 
         # Randomly select a file.
         picked_index = int(uuid.uuid4().int % len(self.files))
@@ -168,14 +168,20 @@ class Reader:
         global_temp_dir = os.path.join(output_dir, 'temp')
         os.makedirs(global_temp_dir, exist_ok=True)
 
-        def _success_callback(*args):
-            pass
+        article_count = 0
+
+        def _success_callback(is_success):
+            nonlocal article_count
+            article_count += 1 if is_success else 0
 
         def _error_callback(e):
             twb_logger.error(f'Error occurred when processing block: {e}')
 
         for file_path in self.files:
             twb_logger.info(f'Start: {file_path}')
+
+            # Reset article count.
+            article_count = 0
 
             file_start_time = time.time()
 
@@ -190,7 +196,7 @@ class Reader:
             os.makedirs(compression_temp_dir, exist_ok=True)
 
             # Decompress the file first (this step will not be done in parallel because this is faster).
-            twb_logger.debug(f'Decompressing...')
+            twb_logger.info(f'Decompressing...')
             decompressed_path = _decompress_executor(file_path, decompression_temp_dir)
 
             # Compute target path. The target path should be within compression temporary directory.
@@ -221,18 +227,20 @@ class Reader:
             pm.close()
             pm.join()
 
-            twb_logger.info(f'Finished modifying {len(line_positions)} blocks. Compressing...')
+            twb_logger.info(f'Finished modifying {len(line_positions)} blocks. Kept {article_count} articles.')
+            twb_logger.debug('Compressing...')
 
-            # Compress the file.
-            output_path = os.path.join(output_dir, os.path.basename(target_path) + COMPRESSION_EXTENSION)
-            compress_zstd(target_path, output_path)
+            # Compress the file only if it exists.
+            if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
+                output_path = os.path.join(output_dir, os.path.basename(target_path) + COMPRESSION_EXTENSION)
+                compress_zstd(target_path, output_path)
 
-            twb_logger.info(f'Finished compressing. Cleaning up...')
+            twb_logger.debug('Finished compressing. Cleaning up...')
 
             # Clean up the temporary directory at this step.
             cleanup_dir(temp_dir)
 
-            twb_logger.info(f'Finished cleaning up.')
+            twb_logger.debug('Finished cleaning up.')
 
             file_end_time = time.time()
             file_execution_duration = file_end_time - file_start_time
@@ -328,3 +336,5 @@ def _modify_executor(controller: RDSProcessController,
     execution_duration = end_time - start_time
 
     controller.logdebug(f'Finished block: {position} -- (took {execution_duration:.2f}s)')
+
+    return block is not None

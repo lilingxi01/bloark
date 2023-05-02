@@ -52,6 +52,7 @@ def universal_logger_init(log_name: str, log_dir: str, log_level: int = logging.
     # Clean up any existing handlers in default logger.
     _cleanup_logger_handlers(logger)
 
+    logger.setLevel(log_level)
     logger.addHandler(stream_handler)
     if file_handler is not None:
         logger.addHandler(file_handler)
