@@ -72,27 +72,33 @@ class Warehouse:
             nonlocal free_warehouses, remaining_sizes
             free_warehouses = [w for w in self.available_warehouses if w not in self.occupied_warehouses]
             remaining_sizes = [
-                self.max_size - get_file_size(os.path.join(self.output_dir, get_warehouse_filenames(w)[0])) \
+                self.max_size - get_file_size(os.path.join(self.output_dir, get_warehouse_filenames(w)[0]))
                 for w in free_warehouses
             ]
+
+        def _get_acceptable_warehouses():
+            nonlocal free_warehouses, remaining_sizes
+            return [(w, s) for w, s in zip(free_warehouses, remaining_sizes) if s >= file_size]
 
         _update_sizes()
 
         for file in files:
             file_size = get_file_size(file)
-            acceptable_warehouses = [(w, s) for w, s in zip(free_warehouses, remaining_sizes) if s >= file_size]
-            if len(acceptable_warehouses) == 0:
+            _update_sizes()
+            acceptable_warehouses = _get_acceptable_warehouses()
+            if not acceptable_warehouses:
                 self.create_warehouse()
                 _update_sizes()
-                acceptable_warehouses = [(w, s) for w, s in zip(free_warehouses, remaining_sizes) if s >= file_size]
-            min_size_warehouse = min(acceptable_warehouses, key=lambda x: x[1])[0]
+                acceptable_warehouses = _get_acceptable_warehouses()
+            min_size_warehouses = min(acceptable_warehouses, key=lambda x: x[1])
+            min_size_warehouse = min_size_warehouses[0]
             if min_size_warehouse not in warehouse_assignments:
                 warehouse_assignments[min_size_warehouse] = []
             warehouse_assignments[min_size_warehouse].append(file)
             remaining_sizes[free_warehouses.index(min_size_warehouse)] -= file_size
 
         for warehouse in warehouse_assignments:
-            logging.debug(f'Assigning warehouse: {warehouse}.')
+            logging.debug(f'Bulk assigning warehouse: {warehouse}.')
             self.occupied_warehouses.append(warehouse)
 
         return warehouse_assignments
@@ -129,4 +135,4 @@ def get_warehouse_filenames(basename: str) -> Tuple[str, str]:
 def get_file_size(filepath: str) -> float:
     if not os.path.exists(filepath):
         return 0
-    return os.path.getsize(filepath) / 1000000000
+    return os.path.getsize(filepath) / (1000 ** 3)
