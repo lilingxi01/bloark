@@ -5,7 +5,7 @@ import twb
 
 
 def test_preload_empty_path():
-    builder = twb.Builder()
+    builder = twb.Builder(output_dir='./test/output')
     with pytest.raises(ValueError):
         builder.preload('')
 
@@ -15,7 +15,7 @@ def test_preload_empty_path():
 
 
 def test_preload_not_exist_path():
-    builder = twb.Builder()
+    builder = twb.Builder(output_dir='./test/output')
     with pytest.raises(FileNotFoundError):
         builder.preload('./not_exist_path')
 
@@ -25,7 +25,7 @@ def test_preload_not_exist_path():
 
 
 def test_preload_file_path():
-    builder = twb.Builder()
+    builder = twb.Builder(output_dir='./test/output')
     builder.preload(testing_dir_path)
 
     reader = twb.Reader()
