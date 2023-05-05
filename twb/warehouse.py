@@ -8,7 +8,7 @@ class Warehouse:
                  output_dir: str,
                  prefix: str = 'warehouse_',
                  suffix: str = '',
-                 max_size: int = 8,
+                 max_size: int = 12,
                  compress: bool = True):
         self.output_dir = output_dir
         self.prefix = prefix
@@ -33,12 +33,13 @@ class Warehouse:
                 f.truncate(0)
             with open(new_metadata_filepath, 'w') as f:
                 f.truncate(0)
-            logging.debug(f'New warehouse created: {new_filename_basename}.')
             self.available_warehouses.append(new_filename_basename)
-            self.warehouse_indexer += 1
+            logging.debug(f'New warehouse created: {new_filename_basename}.')
 
         except:
             logging.error(f'Failed to create new warehouse: {new_filename_basename}.')
+
+        self.warehouse_indexer += 1
 
     def assign_warehouse(self) -> str:
         """
@@ -70,46 +71,37 @@ class Warehouse:
         """
         This function is intended to be called in main process (no parallelism).
         """
-        free_warehouses = [w for w in self.available_warehouses if w not in self.occupied_warehouses]
+        free_warehouses: List[str] = [w for w in self.available_warehouses if w not in self.occupied_warehouses]
         remaining_sizes = {
             w: self.max_size - get_file_size(os.path.join(self.output_dir, get_warehouse_filenames(w)[0]))
             for w in free_warehouses
         }
+        acceptable_warehouses: List[Tuple[str, int]] = []
         warehouse_assignments = dict()
 
         def _sync_warehouses():
-            nonlocal free_warehouses, remaining_sizes
+            nonlocal free_warehouses, remaining_sizes, acceptable_warehouses
             free_warehouses = [w for w in self.available_warehouses if w not in self.occupied_warehouses]
-            for w in free_warehouses:
-                if w not in remaining_sizes:
-                    remaining_sizes[w] = self.max_size
-
-        def _get_acceptable_warehouses(needed_size):
-            nonlocal free_warehouses, remaining_sizes
             acceptable_warehouses = []
             for w in free_warehouses:
                 if w not in remaining_sizes:
                     remaining_sizes[w] = self.max_size
-                if remaining_sizes[w] >= needed_size:
+                if remaining_sizes[w] > 0:
                     acceptable_warehouses.append((w, remaining_sizes[w]))
-            return acceptable_warehouses
+            acceptable_warehouses = sorted(acceptable_warehouses, key=lambda x: x[1], reverse=True)
 
         for file in files:
-            file_size = get_file_size(file)
             _sync_warehouses()
-            acceptable_warehouses = _get_acceptable_warehouses(needed_size=file_size)
             while not acceptable_warehouses:
                 self.create_warehouse()
                 _sync_warehouses()
-                acceptable_warehouses = _get_acceptable_warehouses(needed_size=file_size)
                 if not acceptable_warehouses:
                     logging.critical(f'Failed to create new warehouse for file: {file}.')
-            min_size_warehouses = min(acceptable_warehouses, key=lambda x: x[1])
-            min_size_warehouse = min_size_warehouses[0]
+            min_size_warehouse, _ = acceptable_warehouses[0]
             if min_size_warehouse not in warehouse_assignments:
                 warehouse_assignments[min_size_warehouse] = []
             warehouse_assignments[min_size_warehouse].append(file)
-            remaining_sizes[min_size_warehouse] -= file_size
+            remaining_sizes[min_size_warehouse] -= get_file_size(file)
 
         for warehouse in warehouse_assignments.keys():
             logging.debug(f'Bulk assigning warehouse: {warehouse}.')
