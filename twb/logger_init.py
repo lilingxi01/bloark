@@ -5,10 +5,13 @@ from logging.handlers import QueueListener, QueueHandler
 _log_format = "[%(asctime)s (%(process)d) %(levelname)s] %(message)s"
 _formatter = logging.Formatter(_log_format)
 
+_main_log_format = "[%(asctime)s (main) %(levelname)s] %(message)s"
+_main_formatter = logging.Formatter(_main_log_format)
 
-def _get_logger_stream_handler(log_level: int) -> logging.StreamHandler:
+
+def _get_logger_stream_handler(main_process: bool, log_level: int) -> logging.StreamHandler:
     stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(_formatter)
+    stream_handler.setFormatter(_formatter if not main_process else _main_formatter)
     stream_handler.setLevel(log_level)
     return stream_handler
 
@@ -19,7 +22,7 @@ def _cleanup_logger_handlers(logger: logging.Logger):
 
 
 def _init_logger_main_process(log_level: int):
-    stream_handler = _get_logger_stream_handler(log_level=log_level)
+    stream_handler = _get_logger_stream_handler(main_process=True, log_level=log_level)
     logger = logging.getLogger()
     _cleanup_logger_handlers(logger)
     logger.setLevel(log_level)
@@ -29,7 +32,7 @@ def _init_logger_main_process(log_level: int):
 def _init_logger_multiprocessing(log_level: int = logging.INFO) -> (QueueListener, mp.Queue):
     q = mp.Queue()
 
-    stream_handler = _get_logger_stream_handler(log_level=log_level)
+    stream_handler = _get_logger_stream_handler(main_process=False, log_level=log_level)
 
     ql = QueueListener(q, stream_handler)
     ql.start()

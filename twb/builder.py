@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import shutil
 from functools import partial
 from multiprocessing import Pool
 from typing import List, Tuple, Optional
@@ -81,9 +80,11 @@ class Builder:
         os.makedirs(temp_dir, exist_ok=True)
 
         archive_filename = os.path.basename(file_path)
-        decompressed_dir_name = '.'.join(archive_filename.split('.')[:-1])
-        decompressed_dir_path = os.path.join(temp_dir, decompressed_dir_name)
+        random_id = uuid.uuid4().hex
+        decompressed_dir_path = os.path.join(temp_dir, random_id)
         os.makedirs(decompressed_dir_path, exist_ok=True)
+
+        logging.debug(f'Decompressing [{archive_filename}]...')
 
         with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
             start_time = time.time()
@@ -102,8 +103,9 @@ class Builder:
         :return: the number of URLs processed
         """
         # Initialize processed directory.
-        processed_dir = os.path.join(self.output_dir, 'temp', 'processed')
-        os.makedirs(processed_dir, exist_ok=True)
+        processed_dir = os.path.dirname(xml_path)
+
+        logging.debug(f'Processing {os.path.basename(xml_path)}...')
 
         article_id: Optional[str] = None
         article_title: Optional[str] = None
@@ -212,18 +214,20 @@ class Builder:
             logging.critical(f'Error occurred when processing the file [{xml_file}]: {e}')
             processed_files = []
 
-        finally:
+        try:
             # Remove XML file.
             os.remove(xml_path)
 
-            # If the parent dir of this XML file is empty, remove it.
-            parent_dir = os.path.dirname(xml_path)
-            if len(os.listdir(parent_dir)) == 0:
-                shutil.rmtree(parent_dir)
+        except:
+            logging.error(f'Failed to remove the XML file [{xml_path}].')
+
+        logging.debug(f'Processed (OK): count = {len(processed_files)}')
 
         return processed_files
 
     def _warehouse_executor(self, assigned_warehouse: str, combo_files_list: List[Tuple[str, str]]):
+        logging.debug(f'Warehouse delivering: {assigned_warehouse}')
+
         try:
             warehouse_filename, warehouse_metadata_filename = get_warehouse_filenames(assigned_warehouse)
             warehouse_path = os.path.join(self.output_dir, warehouse_filename)
@@ -253,7 +257,14 @@ class Builder:
                 os.remove(processed_file)
                 os.remove(metadata_file)
 
+                # If the parent dir of this XML file is empty, remove it.
+                parent_dir = os.path.dirname(processed_file)
+                if len(os.listdir(parent_dir)) == 0:
+                    cleanup_dir(parent_dir)
+
             warehouse_file.close()
+
+            logging.debug(f'Warehouse delivered (OK): {assigned_warehouse}')
 
         except Exception as e:
             logging.critical(f'Error occurred when moving the file to the warehouse. {e}')
@@ -261,6 +272,8 @@ class Builder:
         return assigned_warehouse
 
     def _cleanup_executor(self, warehouse_filename: str):
+        logging.debug(f'Warehouse cleaning: {warehouse_filename}')
+
         try:
             original_file_path = os.path.join(self.output_dir, warehouse_filename)
             if not os.path.exists(original_file_path):
@@ -270,6 +283,8 @@ class Builder:
             compressed_path = original_file_path + COMPRESSION_EXTENSION
             compress_zstd(original_file_path, compressed_path)
             os.remove(original_file_path)
+
+            logging.debug(f'Warehouse cleaned (OK): {warehouse_filename}')
 
             return compressed_path
 
@@ -321,7 +336,12 @@ class Builder:
         def _decompress_callback(decompressed_files: List[str]):
             nonlocal available_process_count
 
-            logging.debug(f'Decompressed: {decompressed_files}')
+            if not decompressed_files:
+                logging.debug(f'Decompressed (EMPTY): {decompressed_files}')
+                return
+
+            decompressed_dir = os.path.dirname(decompressed_files[0])
+            logging.debug(f'Decompressed (OK): {decompressed_dir} ({len(decompressed_files)})')
 
             for decompressed_file in decompressed_files:
                 next_task_type = 'process'
