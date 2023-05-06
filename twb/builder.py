@@ -90,8 +90,8 @@ class Builder:
             start_time = time.time()
             z.extractall(path=decompressed_dir_path)
             end_time = time.time()
-            execution_duration = end_time - start_time
-            logging.debug(f'Decompression took {execution_duration:.2f} seconds. ({archive_filename})')
+            execution_duration = (end_time - start_time) / 60
+            logging.debug(f'Decompression took {execution_duration:.2f} min. ({archive_filename})')
         decompressed_files = get_file_list(decompressed_dir_path)
 
         return decompressed_files
@@ -486,7 +486,7 @@ class Builder:
         cleanup_dir(global_temp_dir)
 
         end_time = time.time()
-        execution_duration = end_time - start_time
+        execution_duration = (end_time - start_time) / 60
 
         # Log the end of the task.
-        logging.info(f'All done! Finished all files. (took {execution_duration:.2f}s in total)')
+        logging.info(f'All done! Finished all files. (took {execution_duration:.2f} min in total)')
