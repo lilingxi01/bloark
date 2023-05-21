@@ -1,6 +1,6 @@
 import pytest
 
-from utils.mock_preload_files import get_testing_files, testing_dir_path
+from .utils.mock_preload_files import get_testing_files, testing_dir_path
 import twb
 
 

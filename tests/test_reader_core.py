@@ -3,8 +3,8 @@ import shutil
 from typing import Tuple, List
 
 import twb
-from utils import get_mock_zst_temporary_dir
-from utils.mock_zst_files import get_mock_zst_filenames
+from .utils import get_mock_zst_temporary_dir
+from .utils.mock_zst_files import get_mock_zst_filenames
 
 
 def test_reader_decompress():

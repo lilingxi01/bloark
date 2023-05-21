@@ -5,9 +5,9 @@ import os
 import py7zr
 from multiprocessing import Pool
 
-from utils.mock_zst_files import get_mock_zst_filenames
-from utils.mock_preload_files import create_testing_dir, delete_testing_dir
-from utils.mock_7z_files import get_mock_7z_filenames, get_mock_multiple_article_7z_filename
+from .utils.mock_zst_files import get_mock_zst_filenames
+from .utils.mock_preload_files import create_testing_dir, delete_testing_dir
+from .utils.mock_7z_files import get_mock_7z_filenames, get_mock_multiple_article_7z_filename
 
 
 @pytest.fixture(scope="session", autouse=True)
