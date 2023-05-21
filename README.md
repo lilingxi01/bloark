@@ -1,4 +1,4 @@
-<img src="https://imagedelivery.net/Dr98IMl5gQ9tPkFM5JRcng/49178640-2f6d-4c23-e56f-a48eca531200/HD" alt="TWB" />
+<img src="https://imagedelivery.net/Dr98IMl5gQ9tPkFM5JRcng/007bbe1a-fc2b-4135-e9a6-0d8784004c00/HD" alt="TWB" />
 
 # Temporal Wikipedia Blocks (TWB)
 
