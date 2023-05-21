@@ -1,7 +1,7 @@
 import os
 
 
-original_dir = './test/sample_data'
+original_dir = './tests/sample_data'
 test_file_count = 50
 
 

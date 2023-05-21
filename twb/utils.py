@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, Callable, Union
 import zstandard as zstd
@@ -6,8 +7,6 @@ import shutil
 import psutil
 from importlib.metadata import version, PackageNotFoundError
 import multiprocessing as mp
-
-from twb.logger import twb_logger
 
 
 def get_curr_version():
@@ -161,8 +160,8 @@ def read_line_in_file(path: str, position: int):
 
 
 def _rmtree_error_handler(func, path, exc_info):
-    twb_logger.error(f"Error occurred while calling {func.__name__} on {path}")
-    twb_logger.error(f"Error details: {exc_info}")
+    logging.error(f"Error occurred while calling {func.__name__} on {path}")
+    logging.error(f"Error details: {exc_info}")
 
     # TODO: We might be able to attempt to resolve the issue based on exc_info and then retry the operation.
 
@@ -177,8 +176,8 @@ def cleanup_dir(path: str, onerror: Union[Callable, None] = _rmtree_error_handle
         try:
             shutil.rmtree(path, onerror=onerror)
         except Exception as e:
-            twb_logger.error(f"Error occurred while removing: {path}. Check next log for details.")
-            twb_logger.error(e)
+            logging.error(f"Error occurred while removing: {path}. Check next log for details.")
+            logging.error(e)
 
 
 def prepare_output_dir(output_dir: str):

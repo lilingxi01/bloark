@@ -35,7 +35,7 @@ def generate_mock_7z_files():
 
 # Helper function for generating single-article 7z files.
 def _single_article_7z_generator(file_name: str):
-    original_file = './test/sample_data/minimal_sample.xml'
+    original_file = './tests/sample_data/minimal_sample.xml'
     if os.path.exists(file_name):
         return
     with py7zr.SevenZipFile(file_name, 'w') as archive:
@@ -44,7 +44,7 @@ def _single_article_7z_generator(file_name: str):
 
 # Helper function for generating multi-article 7z files.
 def _multi_article_7z_generator(file_name: str):
-    original_file = './test/sample_data/multi_article_sample.xml'
+    original_file = './tests/sample_data/multi_article_sample.xml'
     if os.path.exists(file_name):
         return
     with py7zr.SevenZipFile(file_name, 'w') as archive:
@@ -53,7 +53,7 @@ def _multi_article_7z_generator(file_name: str):
 
 @pytest.fixture(scope="session", autouse=True)
 def generate_mock_zst_files():
-    original_file = './test/sample_data/sample_block.jsonl.zst'
+    original_file = './tests/sample_data/sample_block.jsonl.zst'
 
     for file_name in get_mock_zst_filenames():
         if os.path.exists(file_name):

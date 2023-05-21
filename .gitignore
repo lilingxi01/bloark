@@ -17,5 +17,5 @@ twikidata-output.json
 .env.*
 
 # Local testing data.
-test/output/
-test/sample_data/temp/
+tests/output/
+tests/sample_data/temp/

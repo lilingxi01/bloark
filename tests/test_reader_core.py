@@ -13,15 +13,15 @@ def test_reader_decompress():
     reader = twb.Reader(num_proc=4)
     reader.preload(temporary_dir)
 
-    reader.decompress(output_dir='./test/output')
+    reader.decompress(output_dir='./tests/output')
 
     # Test that the decompressed files exist.
     for test_filename in test_filenames:
-        assert os.path.exists(os.path.join('./test/output', os.path.split(test_filename)[1][:-4]))
+        assert os.path.exists(os.path.join('./tests/output', os.path.split(test_filename)[1][:-4]))
 
     # TODO: Verify the decompressed file content.
 
-    shutil.rmtree('./test/output')
+    shutil.rmtree('./tests/output')
 
 
 def get_mock_data_dir() -> Tuple[str, List[str]]:
