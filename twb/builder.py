@@ -14,12 +14,10 @@ from .builder_helpers import extract_categories
 from .logger_init import _init_logger_main_process, _init_logger_sub_process, _init_logger_multiprocessing
 from .utils import get_file_list, prepare_output_dir, get_curr_version, cleanup_dir, compress_zstd, \
     COMPRESSION_EXTENSION
-from .warehouse import Warehouse, get_warehouse_filenames, init_warehouse_kwargs
+from .warehouse import Warehouse, get_warehouse_filenames
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
-
-global _mp_lock, _warehouse_indexer, _available_warehouses, _occupied_warehouses
 
 
 class Builder:
@@ -69,18 +67,12 @@ class Builder:
             raise FileNotFoundError('The path does not exist.')
         self.files.extend(get_file_list(path))
 
-    def _worker_initializer(self, q, mp_lock, warehouse_indexer, available_warehouses, occupied_warehouses):
+    def _worker_initializer(self, q):
         """
         Initialize the worker process.
         """
         # Initialize the logger within the sub-process.
         _init_logger_sub_process(q, log_level=self.log_level)
-
-        global _mp_lock, _warehouse_indexer, _available_warehouses, _occupied_warehouses
-        _mp_lock = mp_lock
-        _warehouse_indexer = warehouse_indexer
-        _available_warehouses = available_warehouses
-        _occupied_warehouses = occupied_warehouses
 
     def _decompress_executor(self, file_path: str) -> List[str]:
         # Initialize temporary directory.
@@ -104,24 +96,13 @@ class Builder:
 
         return decompressed_files
 
-    def _process_executor(self, xml_path: str) -> List[str]:
+    def _process_executor(self, xml_path: str, warehouse: Warehouse) -> List[str]:
         """
         Process the file.
         :param xml_path: the path of the file to be processed.
         :return: the number of URLs processed
         """
         logging.debug(f'Processing {os.path.basename(xml_path)}...')
-
-        global _mp_lock, _warehouse_indexer, _available_warehouses, _occupied_warehouses
-        warehouse = Warehouse(
-            mp_lock=_mp_lock,
-            warehouse_indexer=_warehouse_indexer,
-            available_warehouses=_available_warehouses,
-            occupied_warehouses=_occupied_warehouses,
-            output_dir=self.output_dir,
-            max_size=self.max_size,
-            compress=self.compress,
-        )
 
         # Article Metadata.
         article_id: Optional[str] = None
@@ -287,24 +268,10 @@ class Builder:
         # Log the version.
         logging.info(f'Builder Version: {get_curr_version()}')
 
-        mp_manager = mp.Manager()
-        mp_lock = mp_manager.Lock()
-        warehouse_indexer = mp_manager.Value('i', 0)
-        available_warehouses = mp_manager.list()
-        occupied_warehouses = mp_manager.list()
-
-        saved_warehouse_kwargs = {
-            'mp_lock': mp_lock,
-            'warehouse_indexer': warehouse_indexer,
-            'available_warehouses': available_warehouses,
-            'occupied_warehouses': occupied_warehouses,
-        }
-
         warehouse = Warehouse(
             output_dir=self.output_dir,
             max_size=self.max_size,
             compress=self.compress,
-            **saved_warehouse_kwargs
         )
 
         start_time = time.time()
@@ -329,7 +296,7 @@ class Builder:
         modification_pool = mp.Pool(
             processes=self.num_proc,
             initializer=self._worker_initializer,
-            initargs=(q, mp_lock, warehouse_indexer, available_warehouses, occupied_warehouses),
+            initargs=(q,),
         )
 
         processed_count = 0
@@ -403,7 +370,7 @@ class Builder:
                     xml_file_path, = args
                     modification_pool.apply_async(
                         func=self._process_executor,
-                        args=(xml_file_path, ),
+                        args=(xml_file_path, warehouse),
                         callback=partial(_success_callback, task_type),
                         error_callback=_error_callback
                     )
