@@ -2,7 +2,7 @@ import logging
 import shutil
 import os
 
-from utils import get_mock_7z_temporary_dir
+from .utils import get_mock_7z_temporary_dir
 import twb
 
 

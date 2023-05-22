@@ -17,12 +17,12 @@ def benchmark_runner():
 
 
 def main():
-    repeat = 5
+    repeat = 10
     durations = []
     for _ in tqdm(range(repeat), desc="Benchmarking"):
         duration = timeit.timeit(benchmark_runner, number=1)
         durations.append(duration)
-        time.sleep(0.01)  # Adding a short delay to allow the progress bar to update.
+        time.sleep(0.001)  # Adding a short delay to allow the progress bar to update.
     print('==============================')
     print(f'Average duration with {os.cpu_count()} CPUs: {round(sum(durations) / repeat, 6)} seconds.')
 

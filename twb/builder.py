@@ -2,8 +2,8 @@ import json
 import logging
 import os
 from functools import partial
-from multiprocessing import Pool
-from typing import List, Tuple, Optional
+import multiprocessing as mp
+from typing import List, Tuple, Optional, TextIO
 import time
 import uuid
 
@@ -96,88 +96,105 @@ class Builder:
 
         return decompressed_files
 
-    def _process_executor(self, xml_path: str) -> List[str]:
+    def _process_executor(self, xml_path: str, warehouse: Warehouse) -> List[str]:
         """
         Process the file.
         :param xml_path: the path of the file to be processed.
         :return: the number of URLs processed
         """
-        # Initialize processed directory.
-        processed_dir = os.path.dirname(xml_path)
-
         logging.debug(f'Processing {os.path.basename(xml_path)}...')
 
+        # Article Metadata.
         article_id: Optional[str] = None
         article_title: Optional[str] = None
         article_info: Optional[dict] = None
 
-        # A JSONL file.
-        processed_filepath: Optional[str] = None
+        assigned_warehouse: Optional[str] = None
 
-        # A JSON file (which is metadata exclusively for this article).
-        processed_metadata_filepath: Optional[str] = None
+        # Warehouse JSONL file path.
+        warehouse_path: Optional[str] = None
 
-        processed_files = []
+        # Warehouse Metadata JSON file (which is metadata exclusively for this article).
+        warehouse_metadata_path: Optional[str] = None
+
+        # Warehouse JSONL IO.
+        warehouse_file: Optional[TextIO] = None
+
+        processed_count: int = 0
+        full_warehouse_paths: List[str] = []
 
         def _create_new_article(new_article_id: str):
-            nonlocal article_id, article_info, processed_filepath, processed_metadata_filepath
+            nonlocal article_id, article_info, assigned_warehouse, warehouse_path, warehouse_metadata_path, \
+                warehouse_file
             article_id = new_article_id
             # NOTE: We do not clean up the title because the title should be seen before the article id.
             article_info = dict()
 
-            # Will be used for file names.
-            random_id = uuid.uuid4().hex
+            assigned_warehouse = warehouse.assign_warehouse()
+            warehouse_filename, warehouse_metadata_filename = get_warehouse_filenames(assigned_warehouse)
+            warehouse_path = os.path.join(self.output_dir, warehouse_filename)
+            warehouse_metadata_path = os.path.join(self.output_dir, warehouse_metadata_filename)
+            warehouse_file = open(warehouse_path, 'a')
 
-            # Create the processed file for this article.
-            processed_filepath = os.path.join(processed_dir, f'{random_id}.jsonl')
-            processed_metadata_filepath = os.path.join(processed_dir, f'{random_id}.metadata')
-
-            # Create empty files.
-            with open(processed_filepath, 'w') as processed_file:
-                processed_file.truncate(0)
-            with open(processed_metadata_filepath, 'w') as processed_metadata_file:
-                processed_metadata_file.truncate(0)
+            # Record the byte start of the article.
+            article_info['byte_start'] = warehouse_file.tell()
 
         def _cleanup_article():
-            nonlocal article_id, article_info, article_title, processed_filepath, processed_metadata_filepath
+            nonlocal article_id, article_info, article_title, assigned_warehouse, warehouse_path, \
+                warehouse_metadata_path, warehouse_file, full_warehouse_paths
             article_id = None
             article_info = None
             article_title = None
-            processed_filepath = None
-            processed_metadata_filepath = None
+            warehouse_path = None
+            warehouse_metadata_path = None
+            if warehouse_file is not None:
+                warehouse_file.close()
+                warehouse_file = None
+            if assigned_warehouse is not None:
+                full_warehouse_path = warehouse.release_warehouse(assigned_warehouse)
+                assigned_warehouse = None
+                if full_warehouse_path is not None:
+                    full_warehouse_paths.append(full_warehouse_path)
 
-        def _finalizing_metadata():
+        def _finalizing_article():
             """
             After finishing writing an article, we will finalize the metadata file.
             """
-            nonlocal article_id, article_info, article_title, processed_filepath, processed_metadata_filepath
-            if article_id is None:
+            nonlocal article_id, article_info, article_title, assigned_warehouse, warehouse_path, \
+                warehouse_metadata_path, warehouse_file, processed_count, full_warehouse_paths
+            if article_id is None or warehouse_file is None:
                 return
-            with open(processed_metadata_filepath, 'w') as processed_metadata_file:
+            with open(warehouse_metadata_path, 'a') as metadata_file:
                 article_info['id'] = article_id
                 article_info['title'] = article_title
+                article_info['byte_end'] = warehouse_file.tell()
                 if 'last_valid_text_content' in article_info:
                     article_info['categories'] = extract_categories(article_info['last_valid_text_content'])
                     del article_info['last_valid_text_content']
                 else:
                     article_info['categories'] = []
-                json.dump(article_info, processed_metadata_file, indent=2)
-            processed_files.append((processed_filepath, processed_metadata_filepath))
+                metadata_file.write(json.dumps(article_info) + '\n')
+            warehouse_file.close()
+            warehouse_file = None
+            full_warehouse_path = warehouse.release_warehouse(assigned_warehouse)
+            assigned_warehouse = None
+            processed_count += 1
+            if full_warehouse_path is not None:
+                full_warehouse_paths.append(full_warehouse_path)
 
         def _inner_callback(path, item):
-            nonlocal article_id, article_info, article_title, processed_filepath, processed_metadata_filepath
+            nonlocal article_id, article_info, article_title, warehouse_file
             if path[-1][0] == 'title':
                 # When a new article title is encountered, clean up the previous article and save the title for later.
-                _finalizing_metadata()
+                _finalizing_article()
                 _cleanup_article()
                 article_title = item.strip()
             if path[-1][0] == 'id':
                 # When a new article id is encountered, create a new file for processing the article.
                 _create_new_article(new_article_id=item.strip())
             if type(item) is dict and 'text' in item and '#text' in item['text']:
-                to_be_written = {
-                    'article_id': article_id,
-                }
+                to_be_written = dict()
+                to_be_written['article_id'] = article_id
                 if 'id' in item:
                     to_be_written['revision_id'] = item['id']
                     del item['id']
@@ -188,8 +205,7 @@ class Builder:
                     to_be_written['timestamp'] = item['timestamp']
                     del item['timestamp']
                 to_be_written.update(item)
-                with open(processed_filepath, 'a') as processed_file:
-                    processed_file.write(json.dumps(to_be_written) + '\n')
+                warehouse_file.write(json.dumps(to_be_written) + '\n')
 
                 # Prepare text content for extracting categories.
                 text_content = item['text']['#text']
@@ -208,11 +224,10 @@ class Builder:
                 )
 
             # Finalize the last article.
-            _finalizing_metadata()
+            _finalizing_article()
 
         except Exception as e:
             logging.critical(f'Error occurred when processing the file [{xml_file}]: {e}')
-            processed_files = []
 
         try:
             # Remove XML file.
@@ -221,55 +236,9 @@ class Builder:
         except:
             logging.error(f'Failed to remove the XML file [{xml_path}].')
 
-        logging.debug(f'Processed (OK): count = {len(processed_files)}')
+        logging.debug(f'Processed (OK): count = {processed_count}')
 
-        return processed_files
-
-    def _warehouse_executor(self, assigned_warehouse: str, combo_files_list: List[Tuple[str, str]]):
-        logging.debug(f'Warehouse delivering: {assigned_warehouse}')
-
-        try:
-            warehouse_filename, warehouse_metadata_filename = get_warehouse_filenames(assigned_warehouse)
-            warehouse_path = os.path.join(self.output_dir, warehouse_filename)
-            warehouse_metadata_path = os.path.join(self.output_dir, warehouse_metadata_filename)
-
-            warehouse_file = open(warehouse_path, 'a')
-
-            for processed_file, metadata_file in combo_files_list:
-                # Get current byte length of the warehouse file.
-                start_len_warehouse = warehouse_file.tell()
-
-                # Read the file line by line, and move directly to the warehouse (without last empty line).
-                with open(processed_file, 'r') as f:
-                    for line in iter(f.readline, ''):
-                        warehouse_file.write(line + '\n')
-
-                end_len_warehouse = warehouse_file.tell()
-
-                # Insert the metadata file into the warehouse metadata file (with byte start and end).
-                new_metadata = json.load(open(metadata_file, 'r'))
-                new_metadata['byte_start'] = start_len_warehouse
-                new_metadata['byte_end'] = end_len_warehouse
-                with open(warehouse_metadata_path, 'a') as f:
-                    f.write(json.dumps(new_metadata) + '\n')
-
-                # Remove the modified file.
-                os.remove(processed_file)
-                os.remove(metadata_file)
-
-                # If the parent dir of this XML file is empty, remove it.
-                parent_dir = os.path.dirname(processed_file)
-                if len(os.listdir(parent_dir)) == 0:
-                    cleanup_dir(parent_dir)
-
-            warehouse_file.close()
-
-            logging.debug(f'Warehouse delivered (OK): {assigned_warehouse}')
-
-        except Exception as e:
-            logging.critical(f'Error occurred when moving the file to the warehouse. {e}')
-
-        return assigned_warehouse
+        return full_warehouse_paths
 
     def _cleanup_executor(self, warehouse_filename: str):
         logging.debug(f'Warehouse cleaning: {warehouse_filename}')
@@ -324,14 +293,13 @@ class Builder:
 
         available_process_count = self.num_proc
 
-        modification_pool = Pool(
+        modification_pool = mp.Pool(
             processes=self.num_proc,
             initializer=self._worker_initializer,
-            initargs=(q,)
+            initargs=(q,),
         )
 
         processed_count = 0
-        finished_count = 0
 
         def _decompress_callback(decompressed_files: List[str]):
             nonlocal available_process_count
@@ -350,40 +318,18 @@ class Builder:
 
             available_process_count += 1
 
-        def _process_callback(processed_files: List[Tuple[str, str]]):
-            nonlocal warehouse, available_process_count, processed_count
+        def _process_callback(full_warehouse_paths: List[Tuple[str, str]]):
+            nonlocal available_process_count, processed_count
             processed_count += 1
 
-            processed_file_to_metadata_map = {
-                processed_file: metadata_file for processed_file, metadata_file in processed_files
-            }
-
             logging.info(f'({processed_count / total_count * 100:.2f}% = {processed_count} / {total_count}) | '
-                         f'Processed segments: {len(processed_file_to_metadata_map)}')
+                         f'Full warehouses: {len(full_warehouse_paths)}')
 
-            assigned_warehouses = warehouse.bulk_assign([processed_file for processed_file, _ in processed_files])
-
-            for assigned_warehouse, processed_files in assigned_warehouses.items():
-                metadata_files = [processed_file_to_metadata_map[processed_file] for processed_file in processed_files]
-                combo_files_list = zip(processed_files, metadata_files)
-                next_task_type = 'warehouse'
-                next_args = (assigned_warehouse, combo_files_list)
-                tasks.insert(0, (next_task_type, next_args))
-
-            available_process_count += 1
-
-        def _warehouse_callback(warehouse_basename):
-            nonlocal warehouse, available_process_count, finished_count
-
-            logging.debug(f'Saved into warehouse: {warehouse_basename}')
-
-            cleanup_path = warehouse.release_warehouse(warehouse_basename)
-            if cleanup_path is not None:
+            for full_warehouse_path in full_warehouse_paths:
                 next_task_type = 'cleanup'
-                next_args = (cleanup_path,)
+                next_args = (full_warehouse_path,)
                 tasks.insert(0, (next_task_type, next_args))
 
-            finished_count += 1
             available_process_count += 1
 
         def _cleanup_callback(cleanup_path):
@@ -397,8 +343,6 @@ class Builder:
                 _decompress_callback(file_path)
             elif task_type == 'process':
                 _process_callback(file_path)
-            elif task_type == 'warehouse':
-                _warehouse_callback(file_path)
             elif task_type == 'cleanup':
                 _cleanup_callback(file_path)
 
@@ -426,15 +370,7 @@ class Builder:
                     xml_file_path, = args
                     modification_pool.apply_async(
                         func=self._process_executor,
-                        args=(xml_file_path,),
-                        callback=partial(_success_callback, task_type),
-                        error_callback=_error_callback
-                    )
-                elif task_type == 'warehouse':
-                    assigned_warehouse, combo_files_list = args
-                    modification_pool.apply_async(
-                        func=self._warehouse_executor,
-                        args=(assigned_warehouse, combo_files_list),
+                        args=(xml_file_path, warehouse),
                         callback=partial(_success_callback, task_type),
                         error_callback=_error_callback
                     )

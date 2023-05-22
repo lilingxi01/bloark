@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "twb-project"
-version = "1.0.0"
+version = "1.1.0"
 description = "An unified tool for the research in extracting information from Wikipedia Edit History chunk."
 authors = ["Lingxi Li <hi@lingxi.li>"]
 license = "GNU GPL"
