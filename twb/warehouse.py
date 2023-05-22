@@ -57,7 +57,6 @@ class Warehouse:
             # Find the warehouse with the smallest index. Assign the warehouse.
             assigned_warehouse = min(free_warehouses)
             self.occupied_warehouses.append(assigned_warehouse)
-            logging.debug(f'Assigning warehouse: {assigned_warehouse}.')
 
         return assigned_warehouse
 
@@ -67,8 +66,6 @@ class Warehouse:
         with self.mp_lock:
             try:
                 self.occupied_warehouses.remove(warehouse)
-
-                logging.debug(f'Releasing warehouse: {warehouse}.')
 
                 # Check current size, if it is larger than the max size, remove it from the available warehouses.
                 warehouse_file, warehouse_metadata_file = get_warehouse_filenames(warehouse)
