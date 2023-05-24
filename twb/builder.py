@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 from functools import partial
 import multiprocessing as mp
 from typing import List, Tuple, Optional, TextIO
@@ -232,6 +233,10 @@ class Builder:
         try:
             # Remove XML file.
             os.remove(xml_path)
+
+            # Remove the directory if it becomes empty.
+            if not get_file_list(os.path.dirname(xml_path)):
+                shutil.rmtree(os.path.dirname(xml_path))
 
         except:
             logging.error(f'Failed to remove the XML file [{xml_path}].')
