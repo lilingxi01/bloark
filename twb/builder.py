@@ -87,15 +87,19 @@ class Builder:
 
         logging.debug(f'Decompressing [{archive_filename}]...')
 
-        with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
-            start_time = time.time()
-            z.extractall(path=decompressed_dir_path)
-            end_time = time.time()
-            execution_duration = (end_time - start_time) / 60
-            logging.debug(f'Decompression took {execution_duration:.2f} min. ({archive_filename})')
-        decompressed_files = get_file_list(decompressed_dir_path)
+        try:
+            with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
+                start_time = time.time()
+                z.extractall(path=decompressed_dir_path)
+                end_time = time.time()
+                execution_duration = (end_time - start_time) / 60
+                logging.debug(f'Decompression took {execution_duration:.2f} min. ({archive_filename})')
+            decompressed_files = get_file_list(decompressed_dir_path)
+            return decompressed_files
 
-        return decompressed_files
+        except Exception as e:
+            logging.critical(f'Failed to decompress [{archive_filename}] for this reason: {e}')
+            return []
 
     def _process_executor(self, xml_path: str, warehouse: Warehouse) -> List[str]:
         """
@@ -307,8 +311,6 @@ class Builder:
         processed_count = 0
 
         def _decompress_callback(decompressed_files: List[str]):
-            nonlocal available_process_count
-
             if not decompressed_files:
                 logging.debug(f'Decompressed (EMPTY): {decompressed_files}')
                 return
@@ -321,10 +323,8 @@ class Builder:
                 next_args = (decompressed_file,)
                 tasks.insert(0, (next_task_type, next_args))
 
-            available_process_count += 1
-
         def _process_callback(full_warehouse_paths: List[Tuple[str, str]]):
-            nonlocal available_process_count, processed_count
+            nonlocal processed_count
             processed_count += 1
 
             logging.info(f'({processed_count / total_count * 100:.2f}% = {processed_count} / {total_count}) | '
@@ -335,24 +335,23 @@ class Builder:
                 next_args = (full_warehouse_path,)
                 tasks.insert(0, (next_task_type, next_args))
 
-            available_process_count += 1
-
         def _cleanup_callback(cleanup_path):
-            nonlocal available_process_count
             logging.info(f'Warehouse packed: {cleanup_path}')
 
-            available_process_count += 1
-
         def _success_callback(task_type, file_path):
+            nonlocal available_process_count
             if task_type == 'decompress':
                 _decompress_callback(file_path)
             elif task_type == 'process':
                 _process_callback(file_path)
             elif task_type == 'cleanup':
                 _cleanup_callback(file_path)
+            available_process_count += 1
 
         def _error_callback(e):
+            nonlocal available_process_count
             logging.critical(f'Process terminated-level error: {e}')
+            available_process_count += 1
 
         # Built-up initial tasks.
         for curr_file_path in self.files:
