@@ -6,11 +6,11 @@ import time
 import timeit
 
 from .utils import get_mock_7z_temporary_dir
-import twb
+import bloark
 
 
 def benchmark_runner():
-    builder = twb.Builder(output_dir='./tests/output', num_proc=os.cpu_count(), log_level=logging.ERROR)
+    builder = bloark.Builder(output_dir='./tests/output', num_proc=os.cpu_count(), log_level=logging.ERROR)
     builder.preload(get_mock_7z_temporary_dir())
     builder.build()
     shutil.rmtree('./tests/output')

@@ -1,0 +1,19 @@
+#main-content {
+    flex-grow: 1 !important;
+}
+
+.bd-content {
+    width: 100% !important;
+}
+
+.bd-footer {
+    display: none !important;
+}
+
+.bd-article-container {
+    max-width: none !important;
+}
+
+.sidebar-primary-items__end {
+    margin-top: 0 !important;
+}

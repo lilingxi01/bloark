@@ -1,8 +1,8 @@
-<img src="https://imagedelivery.net/Dr98IMl5gQ9tPkFM5JRcng/007bbe1a-fc2b-4135-e9a6-0d8784004c00/HD" alt="TWB" />
+<img src="https://imagedelivery.net/Dr98IMl5gQ9tPkFM5JRcng/b4d5d2b0-860c-4d73-02f0-104d77223800/Ultra" alt="BloArk" />
 
-# Temporal Wikipedia Blocks (TWB)
+# Blocks Architecture (BloArk)
 
-Temporal Wikipedia Blocks (TWB) is a powerful Python package designed to process the extensive edit history of Wikipedia pages into easily manageable and memory-friendly blocks. The package is specifically developed to enable efficient parallelization and composition of these blocks to facilitate faster processing and analysis of large Wikipedia datasets. The original design of this package is to build other Wikipedia-oriented datasets on top of it.
+Blocks Architecture (BloArk) is a powerful Python package designed to process the extensive edit history of Wikipedia pages into easily manageable and memory-friendly blocks. The package is specifically developed to enable efficient parallelization and composition of these blocks to facilitate faster processing and analysis of large Wikipedia datasets. The original design of this package is to build other Wikipedia-oriented datasets on top of it.
 
 The package works by dividing the Wikipedia edit history into temporal blocks, which are essentially subsets of the complete dataset that are based on time intervals. These blocks can then be easily processed and analyzed without the need to load the entire dataset into memory.
 
@@ -11,7 +11,7 @@ The package works by dividing the Wikipedia edit history into temporal blocks, w
 The package is available on PyPI and can be installed using pip:
 
 ```bash
-pip install twb-project
+pip install bloark
 ```
 
 ## Benefits

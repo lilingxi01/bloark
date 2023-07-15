@@ -19,3 +19,5 @@ twikidata-output.json
 # Local testing data.
 tests/output/
 tests/sample_data/temp/
+
+docs/build/
