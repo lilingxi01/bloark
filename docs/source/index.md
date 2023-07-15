@@ -10,8 +10,8 @@
 :caption: Usage
 :maxdepth: 3
 
-root/introduction
-root/get-started
+introduction
+get-started
 ```
 
 ```{toctree}
@@ -27,5 +27,5 @@ architecture/modifier
 :caption: Resources
 :maxdepth: 3
 
-root/api
+api-references
 ```
