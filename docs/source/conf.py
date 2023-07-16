@@ -12,7 +12,16 @@ copyright = '2023, Lingxi Li. All rights reserved'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ['myst_parser', 'sphinx.ext.autodoc', 'sphinx_favicon']
+extensions = [
+    "sphinx.ext.mathjax",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.coverage",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.autosectionlabel",
+    "myst_parser",
+    "sphinx_copybutton",
+    'sphinx_favicon',
+]
 
 templates_path = ['_templates']
 exclude_patterns = ['.DS_Store']
@@ -28,6 +37,8 @@ html_theme_options = {
         "image_light": "./_static/logo.png",
         "image_dark": "./_static/logo_dark.png",
     },
+    "use_download_button": False,
+    "use_fullscreen_button": False,
     "repository_url": "https://github.com/lilingxi01/bloark",
     "use_repository_button": True,
     "show_toc_level": 3,
