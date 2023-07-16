@@ -4,7 +4,7 @@ We introduce some new concepts in this project, and it is important to understan
 
 ## Block
 
-Block is so called "single processable unit", which is the minimal structure that we should treat as a whole. For example, in Wikipedia Edit History scenario, a block is a single revision of an article because we cannot divide a revision into smaller pieces when the dataset stores "edit histories" rather than any other form of content.
+Block is so-called "single processable unit", which is the minimal structure that we should treat as a whole. For example, in Wikipedia Edit History scenario, a block is a single revision of an article because we cannot divide a revision into smaller pieces when the dataset stores "edit histories" rather than any other form of content.
 
 ## Segment
 

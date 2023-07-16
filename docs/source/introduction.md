@@ -24,7 +24,7 @@ This architecture typically works with any revision-based data. In Wikipedia Edi
 ## Design considerations
 
 When BloArk is designed, the following scenarios (including but not limited) are considered:
-- The single processable unit of a dataset is too large to be loaded into memory.
+- The *single processable unit* of a dataset is NOT too large to be loaded into memory.
 - A long-running device, such as Slurm job. It means that typical Jupyter Notebook is runnable but not suitable for this scenario in following reasons:
    - The Jupyter Notebook is not designed for long-running tasks. When you exit the browser (or close the browser tab), the Jupyter Notebook running session will be terminated.
    - Logs on Jupyter Notebook are not persistent and are not user-friendly. The scrolling experience along a long log is very bad on Jupyter Notebook (and Jupyter Lab, including all Jupyter-based software).
