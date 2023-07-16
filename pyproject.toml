@@ -21,6 +21,8 @@ psutil = "^5.9.5"
 requests = "^2.31.0"
 beautifulsoup4 = "^4.12.2"
 tqdm = "^4.65.0"
+unstable = "^0.5.1"
+wrapt = "^1.15.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"

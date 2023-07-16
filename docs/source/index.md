@@ -26,4 +26,5 @@ architecture/definitions
 :maxdepth: 3
 
 api-references
+unstable-notices
 ```

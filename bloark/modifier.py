@@ -9,7 +9,7 @@ import time
 
 from .logger_init import _init_logger_main_process, _init_logger_sub_process, _init_logger_multiprocessing
 from .utils import get_file_list, decompress_zstd, prepare_output_dir, get_curr_version, \
-    cleanup_dir, compress_zstd, COMPRESSION_EXTENSION
+    cleanup_dir, compress_zstd, COMPRESSION_EXTENSION, unstable
 from .warehouse import Warehouse, get_warehouse_filenames
 
 _DEFAULT_NUM_PROC = 1
@@ -43,8 +43,11 @@ class ModifierProfile(ABC):
         pass
 
 
+@unstable
 class Modifier:
     """
+    Modifier is the class to define how to modify the JSON content of a block (or a segment) from the warehouse.
+
     Attributes
     ----------
     num_proc : int

@@ -5,6 +5,10 @@ import multiprocessing as mp
 
 
 class Warehouse:
+    """
+    Warehouse is a module that manages the creation, assignment, and equal distribution of BloArk blocks (and segments).
+    """
+
     def __init__(self,
                  output_dir: str,
                  prefix: str = 'warehouse_',
@@ -24,6 +28,15 @@ class Warehouse:
         self.occupied_warehouses = mp_manager.list()
 
     def create_warehouse(self):
+        """
+        Create a new warehouse when needed.
+        This function will never return the created warehouse. Please try to access one via `assign_warehouse()`.
+
+        Notes
+        -----
+        This function is intended to be called in main process (no parallelism).
+
+        """
         # Fill 5 digits with 0s.
         curr_index = str(self.warehouse_indexer.value).zfill(5)
         new_filename_basename = f'{self.prefix}{curr_index}{self.suffix}'
@@ -46,7 +59,17 @@ class Warehouse:
 
     def assign_warehouse(self) -> str:
         """
+        Request to assign a warehouse to a block.
+
+        Returns
+        -------
+        assigned_warehouse : str
+            The name of the assigned warehouse.
+
+        Notes
+        -----
         This function is intended to be called in main process (no parallelism).
+
         """
         with self.mp_lock:
             free_warehouses = [w for w in self.available_warehouses if w not in self.occupied_warehouses]
@@ -61,6 +84,24 @@ class Warehouse:
         return assigned_warehouse
 
     def release_warehouse(self, warehouse: str) -> Union[str, None]:
+        """
+        Release the assignment of a warehouse.
+
+        Parameters
+        ----------
+        warehouse : str
+            The name of the warehouse to be released.
+
+        Returns
+        -------
+        warehouse_file_should_compress : str or None
+            The name of the warehouse file that should be compressed. If None, no compression is needed.
+
+        Notes
+        -----
+        This function is intended to be called in main process (no parallelism).
+
+        """
         warehouse_file_should_compress = None
 
         with self.mp_lock:
@@ -81,6 +122,20 @@ class Warehouse:
         return warehouse_file_should_compress
 
     def finalize_warehouse(self, warehouse: str):
+        """
+        Finalize a warehouse.
+        This function should be called when the warehouse is full and no more blocks will be assigned to it.
+
+        Parameters
+        ----------
+        warehouse : str
+            The name of the warehouse to be finalized.
+
+        Notes
+        -----
+        This function is intended to be called in main process (no parallelism).
+
+        """
         with self.mp_lock:
             self.available_warehouses.remove(warehouse)
 

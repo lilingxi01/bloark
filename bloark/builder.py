@@ -29,11 +29,11 @@ class Builder:
     ----------
     output_dir : str
         The output directory.
-    num_proc : int, default=1
+    num_proc : int
         The number of processes to use.
-    log_level : int, default=logging.INFO
+    log_level : int
         The built-in logging level.
-    compress : bool, default=True
+    compress : bool
         Whether to compress the output files.
     files : list
         A list of files to be read.

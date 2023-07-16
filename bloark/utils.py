@@ -7,6 +7,8 @@ import shutil
 import psutil
 from importlib.metadata import version, PackageNotFoundError
 import multiprocessing as mp
+import inspect
+from unstable import unstable as unstable_warning_decorator
 
 
 def get_curr_version():
@@ -200,3 +202,17 @@ def parse_schema(obj):
         return [parse_schema(obj[0]), len(obj)]
     else:
         return type(obj).__name__
+
+
+def unstable(cls):
+    """
+    This decorator marks a class or all methods of a class as unstable and adds a marker for Sphinx documentation.
+    """
+    if inspect.isclass(cls):
+        cls.__unstable__ = True
+        for name, method in inspect.getmembers(cls, inspect.isfunction):
+            setattr(cls, name, unstable_warning_decorator(method))
+    else:
+        cls.__unstable__ = True
+        cls = unstable_warning_decorator(cls)
+    return cls

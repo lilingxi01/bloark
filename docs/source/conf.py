@@ -25,6 +25,10 @@ extensions = [
 
 suppress_warnings = ["myst.xref_missing", "myst.iref_ambiguous"]
 
+autodoc = {
+    'unstable': True,
+}
+
 templates_path = ['_templates']
 exclude_patterns = ['.DS_Store']
 
@@ -50,3 +54,17 @@ html_theme_options = {
 favicons = [
     {"href": "favicon.ico"},
 ]
+
+
+def mark_unstable(app, what, name, obj, options, lines):
+    if getattr(obj, '__unstable__', False):
+        lines[:0] = [
+            '.. warning::',
+            '',
+            '   This %s is marked as unstable.' % what,
+            '',
+        ]
+
+
+def setup(app):
+    app.connect('autodoc-process-docstring', mark_unstable)
