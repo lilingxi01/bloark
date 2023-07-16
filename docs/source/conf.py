@@ -17,7 +17,6 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.coverage",
     "sphinx.ext.napoleon",
-    "sphinx.ext.autosectionlabel",
     "myst_parser",
     "sphinx_copybutton",
     'sphinx_favicon',
@@ -89,7 +88,7 @@ def mark_unstable(app, what, name, obj, options, lines):
             return
         deprecation_message = getattr(obj, '__deprecated_message__', 'This %s is deprecated.' % what)
         lines[:0] = [
-            '.. deprecated:: v%s' % deprecation_version,
+            '.. deprecated:: %s' % deprecation_version,
             '',
             '   %s' % deprecation_message,
             '',

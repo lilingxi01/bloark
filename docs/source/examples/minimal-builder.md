@@ -28,11 +28,11 @@ builder.build()
 
 ## Bash script
 
-This is an example bash script that will be used by `sbatch` to submit the job to a cluster. You need to make sure either one of the following conditions is satisfied:
-- The default `pip` (comes with the user) already contains the necessary packages (specifically `bloark`).
-- The `bloark` package is installed into a `conda` environment, and the `conda` environment is activated in the same terminal that you use to submit the job (executing this bash script). Check out the [conda tips](#conda-tips) section for more details.
+```{note}
+Check [cluster requirements](../architecture/cluster-requirements.md) for more details about cluster environment setup.
+```
 
-Put the following script in the same directory as the Python script. For example, we name this script as `blocks_0_builder.sh`.
+This is an example bash script that will be used by `sbatch` to submit the job to a cluster. Put the following script in the same directory as the Python script. For example, we name this script as `blocks_0_builder.sh`.
 
 ```bash
 #!/bin/bash
@@ -53,12 +53,4 @@ After activating the correct conda environment (having correct terminal prefix l
 
 ```bash
 sbatch blocks_0_builder.sh
-```
-
-### Conda tips
-
-You don't have to write any `conda activate` scripts within the bash file because it will create a lot of confusions on the Slurm side. You can simply use an activated conda environment to submit the job and the job will be executed in the exact same environment.
-
-```{note}
-It is fine if you are using `pip` to install the `bloark`. As long as you are installing to a conda environment, it will be taken care of within the Slurm job.
 ```

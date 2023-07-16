@@ -19,6 +19,7 @@ get-started
 :maxdepth: 3
 
 architecture/definitions
+architecture/cluster-requirements
 ```
 
 ```{toctree}
@@ -26,12 +27,13 @@ architecture/definitions
 :maxdepth: 3
 
 examples/minimal-builder
+examples/minimal-modifier
 ```
 
 ```{toctree}
 :caption: Resources
 :maxdepth: 3
 
-api-references
-utility-functions
+resources/api-references
+resources/utility-functions
 ```
