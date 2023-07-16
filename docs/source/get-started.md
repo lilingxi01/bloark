@@ -28,4 +28,4 @@ This method is NOT recommended in Slurm (cluster environment) since you have to 
 
 ## Suggested environment
 
-BloArk is recommended to be run in cluster environment or simply in terminal. Jupyter Notebook session (including but not limited to Jupyter Lab) is not recommended since it is not designed for long-running tasks. You can check [design considerations](introduction.md#design-considerations) for more details.
+BloArk is recommended to be run in cluster environment or simply in terminal. Jupyter Notebook session (including but not limited to Jupyter Lab) is not recommended since it is not designed for long-running tasks. You can check [design considerations](introduction.md#design-considerations) for more details about why we do this. Or, you can view the [cluster requirements](cluster-requirements.md) for information about cluster environment setup.

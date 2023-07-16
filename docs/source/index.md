@@ -12,6 +12,7 @@
 
 introduction
 get-started
+cluster-requirements
 ```
 
 ```{toctree}
@@ -19,7 +20,6 @@ get-started
 :maxdepth: 3
 
 architecture/definitions
-architecture/cluster-requirements
 ```
 
 ```{toctree}
