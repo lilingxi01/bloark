@@ -23,10 +23,15 @@ exclude_patterns = ['.DS_Store']
 html_theme = 'sphinx_book_theme'
 html_static_path = ['_static']
 html_title = "BloArk"
-html_logo = "./_resources/logo.png"
 html_theme_options = {
+    "logo": {
+        "image_light": "./_static/logo.png",
+        "image_dark": "./_static/logo_dark.png",
+    },
     "repository_url": "https://github.com/lilingxi01/bloark",
     "use_repository_button": True,
+    "show_toc_level": 3,
+    "announcement": "<b>WARNING:</b> BloArk is under active development and is not stable yet!",
 }
 
 favicons = [

@@ -19,8 +19,6 @@ get-started
 :maxdepth: 3
 
 architecture/definitions
-architecture/builder
-architecture/modifier
 ```
 
 ```{toctree}

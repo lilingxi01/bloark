@@ -4,16 +4,25 @@
 
 .bd-content {
     width: 100% !important;
+    justify-content: flex-start !important;
 }
 
 .bd-footer {
     display: none !important;
 }
 
-.bd-article-container {
-    max-width: none !important;
-}
-
 .sidebar-primary-items__end {
     margin-top: 0 !important;
+}
+
+.bd-header-announcement {
+    background-color: #fef2f2 !important;
+    color: #dc2626 !important;
+    border-bottom: 1px solid #fee2e2 !important;
+}
+
+html[data-theme='dark'] .bd-header-announcement {
+    background-color: #7f1d1d !important;
+    color: #fef2f2 !important;
+    border-bottom: 1px solid #991b1b !important;
 }
