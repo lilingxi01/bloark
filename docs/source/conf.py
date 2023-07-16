@@ -58,10 +58,40 @@ favicons = [
 
 def mark_unstable(app, what, name, obj, options, lines):
     if getattr(obj, '__unstable__', False):
-        lines[:0] = [
-            '.. warning::',
+        unstable_since = getattr(obj, '__unstable_since__', None)
+        unstable_message = getattr(obj, '__unstable_message__', None)
+        unstable_mark_formats = [
+            '.. caution::',
             '',
-            '   This %s is marked as unstable.' % what,
+        ]
+        if unstable_since:
+            unstable_mark_formats += [
+                '   This %s is marked as **unstable** since version ``%s``.' % (what, unstable_since),
+                '',
+            ]
+        else:
+            unstable_mark_formats += [
+                '   This %s is marked as **unstable**.' % what,
+                '',
+            ]
+        if unstable_message:
+            unstable_mark_formats += [
+                '.. admonition:: Unstable notice',
+                '',
+                '   %s' % unstable_message,
+                '',
+            ]
+        lines[:0] = unstable_mark_formats
+
+    if getattr(obj, '__deprecated__', False):
+        deprecation_version = getattr(obj, '__deprecated_version__', None)
+        if not deprecation_version:
+            return
+        deprecation_message = getattr(obj, '__deprecated_message__', 'This %s is deprecated.' % what)
+        lines[:0] = [
+            '.. deprecated:: v%s' % deprecation_version,
+            '',
+            '   %s' % deprecation_message,
             '',
         ]
 

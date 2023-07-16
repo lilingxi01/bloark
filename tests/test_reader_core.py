@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 from typing import Tuple, List
@@ -10,10 +11,10 @@ from .utils.mock_zst_files import get_mock_zst_filenames
 def test_reader_decompress():
     temporary_dir, test_filenames = get_mock_data_dir()
 
-    reader = bloark.Reader(num_proc=4)
+    reader = bloark.Reader(num_proc=4, output_dir='./tests/output', log_level=logging.DEBUG)
     reader.preload(temporary_dir)
 
-    reader.decompress(output_dir='./tests/output')
+    reader.decompress()
 
     # Test that the decompressed files exist.
     for test_filename in test_filenames:

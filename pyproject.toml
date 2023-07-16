@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "bloark"
-version = "2.0.1"
-description = "Blocks Architecture (BloArk): An unified tool for processing revision-based data efficiently."
+version = "2.0.2"
+description = "Blocks Architecture (BloArk): A unified tool for processing revision-based data efficiently."
 authors = ["Lingxi Li <hi@lingxi.li>"]
 license = "GNU GPL"
 readme = "README.md"

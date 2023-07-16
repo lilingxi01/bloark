@@ -22,9 +22,16 @@ architecture/definitions
 ```
 
 ```{toctree}
+:caption: Examples
+:maxdepth: 3
+
+examples/minimal-builder
+```
+
+```{toctree}
 :caption: Resources
 :maxdepth: 3
 
 api-references
-unstable-notices
+utility-functions
 ```

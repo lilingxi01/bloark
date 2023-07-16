@@ -7,16 +7,21 @@ import shutil
 import psutil
 from importlib.metadata import version, PackageNotFoundError
 import multiprocessing as mp
-import inspect
-from unstable import unstable as unstable_warning_decorator
+from .decorators import deprecated
 
 
 def get_curr_version():
     """
     Get the version of the package.
+
+    Returns
+    -------
+    version: str
+        The version of the package.
+
     """
     try:
-        return version('twb-project')
+        return version('bloark')
     except PackageNotFoundError:
         return "Package not found"
 
@@ -24,9 +29,22 @@ def get_curr_version():
 def get_file_list(input_path: str) -> List[str]:
     """
     Get the list of files in the input directory.
-    :param input_path: the input directory
-    :raise FileNotFoundError: if the path does not exist
-    :return: the list of files
+
+    Parameters
+    ----------
+    input_path : str
+        The input directory.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the path does not exist.
+
+    Returns
+    -------
+    List[str]
+        The list of files.
+
     """
     # If the path does not exist, raise an error.
     if not os.path.exists(input_path):
@@ -53,9 +71,19 @@ def get_file_list(input_path: str) -> List[str]:
 def get_decompress_output_path(input_path: str, output_dir: str):
     """
     Get the output path of the decompressed file.
-    :param input_path: the input path
-    :param output_dir: the output directory
-    :return: the output path
+
+    Parameters
+    ----------
+    input_path : str
+        The input path.
+    output_dir : str
+        The output directory.
+
+    Returns
+    -------
+    str
+        The output path.
+
     """
     # Split the path into its components
     _, file_name = os.path.split(input_path)
@@ -76,8 +104,14 @@ COMPRESSION_EXTENSION = '.zst'
 def compress_zstd(input_path: str, output_path: str):
     """
     Compress the blocks into a Zstandard file.
-    :param input_path: the input path
-    :param output_path: the output path
+
+    Parameters
+    ----------
+    input_path : str
+        The input path.
+    output_path : str
+        The output path.
+
     """
     # Compress the blocks.
     compressor = zstd.ZstdCompressor()
@@ -88,8 +122,14 @@ def compress_zstd(input_path: str, output_path: str):
 def decompress_zstd(input_path: str, output_path: str):
     """
     Decompress the blocks from a Zstandard file.
-    :param input_path: the input path
-    :param output_path: the output path
+
+    Parameters
+    ----------
+    input_path : str
+        The input path.
+    output_path : str
+        The output path.
+
     """
     # Decompress the blocks.
     decompressor = zstd.ZstdDecompressor()
@@ -97,9 +137,21 @@ def decompress_zstd(input_path: str, output_path: str):
         decompressor.copy_stream(ifh, ofh)
 
 
+@deprecated(version='0.7.1', message='No longer needed.')
 def compute_total_available_space(output_dir: str) -> int:
     """
-    Deprecated: Compute the total available space in the output directory.
+    Compute the total available space in the output directory.
+
+    Parameters
+    ----------
+    output_dir : str
+        The output directory.
+
+    Returns
+    -------
+    int
+        The total available space in bytes.
+
     """
     total_available_space = shutil.disk_usage(output_dir).free
 
@@ -111,6 +163,20 @@ def compute_total_available_space(output_dir: str) -> int:
 
 
 def get_estimated_size(path: str) -> int:
+    """
+    Get the estimated size of the file.
+
+    Parameters
+    ----------
+    path : str
+        The path to the file.
+
+    Returns
+    -------
+    int
+        The estimated size of the file.
+
+    """
     if path.endswith('.7z'):
         with py7zr.SevenZipFile(path, 'r') as z:
             space = z.archiveinfo().uncompressed
@@ -128,14 +194,34 @@ def get_estimated_size(path: str) -> int:
 
 
 def get_memory_consumption() -> int:
+    """
+    Get the memory consumption of the current process.
+
+    Returns
+    -------
+    int
+        The memory consumption in MB.
+
+    """
     process = psutil.Process(mp.current_process().pid)
     memory_usage_mb = process.memory_info().rss / 1024 / 1024
     return round(memory_usage_mb, 2)
 
 
-def get_line_positions(path: str):
+def get_line_positions(path: str) -> List[int]:
     """
     Get all line positions in the given file. So that it could be re-used to read the file for a specific line.
+
+    Parameters
+    ----------
+    path : str
+        The path to the file.
+
+    Returns
+    -------
+    List[int]
+        The list of line positions.
+
     """
     line_positions = []
 
@@ -152,9 +238,22 @@ def get_line_positions(path: str):
     return line_positions
 
 
-def read_line_in_file(path: str, position: int):
+def read_line_in_file(path: str, position: int) -> str:
     """
     Read a specific line in the file without loading the entire file into memory.
+
+    Parameters
+    ----------
+    path : str
+        The path to the file.
+    position : int
+        The start position of the line.
+
+    Returns
+    -------
+    str
+        The line itself in string.
+
     """
     with open(path, 'r') as f:
         f.seek(position)
@@ -171,8 +270,14 @@ def _rmtree_error_handler(func, path, exc_info):
 def cleanup_dir(path: str, onerror: Union[Callable, None] = _rmtree_error_handler):
     """
     Clean up the directory.
-    :param path: the directory path
-    :param onerror: the error handler
+
+    Parameters
+    ----------
+    path : str
+        The path to the directory.
+    onerror : Union[Callable, None]
+        The error handler.
+
     """
     if os.path.exists(path):
         try:
@@ -183,6 +288,15 @@ def cleanup_dir(path: str, onerror: Union[Callable, None] = _rmtree_error_handle
 
 
 def prepare_output_dir(output_dir: str):
+    """
+    Prepare the output directory.
+
+    Parameters
+    ----------
+    output_dir : str
+        The output directory.
+
+    """
     if os.path.exists(output_dir):
         cleanup_dir(output_dir)
     os.makedirs(output_dir)
@@ -191,6 +305,12 @@ def prepare_output_dir(output_dir: str):
 def parse_schema(obj):
     """
     Parse the schema of the given object. Used for glimpse.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to parse.
+
     """
     if isinstance(obj, dict):
         if not obj:
@@ -202,17 +322,3 @@ def parse_schema(obj):
         return [parse_schema(obj[0]), len(obj)]
     else:
         return type(obj).__name__
-
-
-def unstable(cls):
-    """
-    This decorator marks a class or all methods of a class as unstable and adds a marker for Sphinx documentation.
-    """
-    if inspect.isclass(cls):
-        cls.__unstable__ = True
-        for name, method in inspect.getmembers(cls, inspect.isfunction):
-            setattr(cls, name, unstable_warning_decorator(method))
-    else:
-        cls.__unstable__ = True
-        cls = unstable_warning_decorator(cls)
-    return cls

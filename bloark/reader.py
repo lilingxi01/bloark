@@ -10,7 +10,8 @@ import uuid
 from py7zr import py7zr
 
 from .logger_init import _init_logger_main_process, _init_logger_sub_process, _init_logger_multiprocessing
-from .utils import get_file_list, prepare_output_dir, get_curr_version, cleanup_dir, read_line_in_file, parse_schema
+from .utils import get_file_list, prepare_output_dir, get_curr_version, cleanup_dir, read_line_in_file, parse_schema, \
+    decompress_zstd
 
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
@@ -87,29 +88,36 @@ class Reader:
         # Initialize the logger within the sub-process.
         _init_logger_sub_process(q, log_level=self.log_level)
 
-    def _decompress_executor(self, file_path: str) -> List[str]:
+    def _decompress_executor(self, file_path: str, temporarily: bool = False) -> List[str]:
         """
         Decompress the file.
         """
-        # Initialize temporary directory.
-        temp_dir = os.path.join(self.output_dir, 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
+        # Initialize output directory.
+        output_dir = os.path.join(self.output_dir, 'temp') if temporarily else self.output_dir
+        os.makedirs(output_dir, exist_ok=True)
 
         archive_filename = os.path.basename(file_path)
         random_id = uuid.uuid4().hex
-        decompressed_dir_path = os.path.join(temp_dir, random_id)
-        os.makedirs(decompressed_dir_path, exist_ok=True)
+        decompressed_dir_path = os.path.join(output_dir, random_id) if temporarily else output_dir
+        if temporarily:
+            os.makedirs(decompressed_dir_path, exist_ok=True)
 
         logging.debug(f'Decompressing [{archive_filename}]...')
 
         try:
-            with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
-                start_time = time.time()
-                z.extractall(path=decompressed_dir_path)
-                end_time = time.time()
-                execution_duration = (end_time - start_time) / 60
-                logging.debug(f'Decompression took {execution_duration:.2f} min. ({archive_filename})')
-            decompressed_files = get_file_list(decompressed_dir_path)
+            start_time = time.time()
+            if file_path.endswith('.7z'):
+                with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
+                    z.extractall(path=decompressed_dir_path)
+                decompressed_files = get_file_list(decompressed_dir_path)
+            elif file_path.endswith('.zst'):
+                decompress_zstd(file_path, os.path.join(decompressed_dir_path, archive_filename[:-4]))
+                decompressed_files = [os.path.join(decompressed_dir_path, archive_filename[:-4])]
+            else:
+                decompressed_files = []
+            end_time = time.time()
+            execution_duration = (end_time - start_time) / 60
+            logging.debug(f'Decompression took {execution_duration:.2f} min. ({archive_filename})')
             return decompressed_files
 
         except Exception as e:
@@ -232,7 +240,7 @@ class Reader:
         logging.info(f'Decompressing...')
 
         # Decompress the file.
-        decompressed_files = self._decompress_executor(glimpse_path)
+        decompressed_files = self._decompress_executor(file_path=glimpse_path, temporarily=True)
         if not decompressed_files:
             logging.error(f'Failed to decompress the file: {glimpse_path}')
             return None, None
