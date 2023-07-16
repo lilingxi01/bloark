@@ -23,12 +23,21 @@ _DEFAULT_LOG_LEVEL = logging.INFO
 
 class Builder:
     """
-    Attributes:
-        output_dir (str): The output directory.
-        num_proc (int): The number of processes to use.
-        log_level (int): The log level.
-        compress (bool): Whether to compress the output files.
-        files (list): A list of files to be read.
+    Builder is a class for building the warehouse from the original data source.
+
+    Attributes
+    ----------
+    output_dir : str
+        The output directory.
+    num_proc : int, default=1
+        The number of processes to use.
+    log_level : int, default=logging.INFO
+        The built-in logging level.
+    compress : bool, default=True
+        Whether to compress the output files.
+    files : list
+        A list of files to be read.
+
     """
 
     def __init__(self,
@@ -38,11 +47,19 @@ class Builder:
                  max_size: int = 16,
                  compress: bool = True):
         """
-        :param output_dir: the output directory
-        :param num_proc: the number of processes to use (default: 1)
-        :param log_level: the log level (default: logging.INFO)
-        :param max_size: the maximum size of an uncompressed warehouse (default: 12)
-        :param compress: whether to compress the output files (default: True)
+        Parameters
+        ----------
+        output_dir : str
+            The output directory.
+        num_proc : int, default=1
+            The number of processes to use.
+        log_level : int, default=logging.INFO
+            The built-in logging level.
+        max_size : int, default=16
+            The maximum size of an uncompressed warehouse in GB.
+        compress : bool, default=True
+            Whether to compress the output files.
+
         """
         self.output_dir = output_dir
         self.num_proc = num_proc
@@ -58,9 +75,19 @@ class Builder:
         """
         Preload the files to be processed.
         It will not actually load to the memory until the build() method is called.
-        :param path: the path of a file or a directory
-        :raise ValueError: if the path is empty
-        :raise FileNotFoundError: if the path does not exist
+
+        Parameters
+        ----------
+        path : str
+            The path of a file or a directory.
+
+        Raises
+        ------
+        ValueError
+            If the path is empty.
+        FileNotFoundError
+            If the path does not exist.
+
         """
         if not path:
             raise ValueError('The path cannot be empty.')
@@ -104,8 +131,19 @@ class Builder:
     def _process_executor(self, xml_path: str, warehouse: Warehouse) -> List[str]:
         """
         Process the file.
-        :param xml_path: the path of the file to be processed.
-        :return: the number of URLs processed
+
+        Parameters
+        ----------
+        xml_path : str
+            The path of the file to be processed.
+        warehouse : Warehouse
+            The warehouse object.
+
+        Returns
+        -------
+        List[str]
+            The list of full paths of the warehouses.
+
         """
         logging.debug(f'Processing {os.path.basename(xml_path)}...')
 

@@ -3,7 +3,7 @@ import logging
 import os
 from functools import partial
 from multiprocessing import Pool
-from typing import Union, List, Tuple
+from typing import List, Tuple, Optional
 from abc import ABC, abstractmethod
 import time
 
@@ -21,22 +21,41 @@ class ModifierProfile(ABC):
     The core class to define how to modify the JSON content.
     """
     @abstractmethod
-    def block(self, content: dict) -> Union[dict, None]:
+    def block(self, content: dict, metadata: dict) -> Optional[dict]:
         """
         Returns a list of batches of URLs to download.
-        :param content: The JSON content to be modified.
-        :return: Modified JSON content. Return None if the content should be removed.
+
+        Parameters
+        ----------
+        content : dict
+            The JSON content to be modified.
+        metadata : dict
+            The metadata of the JSON content. This will be updated within one segment from the previous return value.
+
+        Returns
+        -------
+        Tuple[Optional[dict], Optional[dict]]
+            Data JSON content and metadata (whatever modified or not).
+            Return None in the first value if the content should be removed.
+            Return None in the second value if the entire segment should be removed.
+
         """
         pass
 
 
 class Modifier:
     """
-    Attributes:
-        num_proc (int): The number of processes to use.
-        log_level (int): The log level.
-        files (list): A list of files to be read.
-        modifiers (list): A list of modifiers to be applied.
+    Attributes
+    ----------
+    num_proc : int
+        The number of processes to use.
+    log_level : int
+        The log level.
+    files : list
+        A list of files to be read.
+    modifiers : list
+        A list of modifiers to be applied.
+
     """
 
     def __init__(self,
@@ -44,9 +63,15 @@ class Modifier:
                  num_proc: int = _DEFAULT_NUM_PROC,
                  log_level: int = _DEFAULT_LOG_LEVEL):
         """
-        :param output_dir: the output directory
-        :param num_proc: the number of processes to use (default: 1)
-        :param log_level: the log level (default: logging.INFO)
+        Parameters
+        ----------
+        output_dir : str
+            The output directory.
+        num_proc : int, default=1
+            The number of processes to use.
+        log_level : int, default=logging.INFO
+            The log level.
+
         """
         self.output_dir = output_dir
         self.num_proc = num_proc
@@ -61,9 +86,19 @@ class Modifier:
         """
         Preload the files to be processed.
         It will not actually load to the memory until the build() method is called.
-        :param path: the path of a file or a directory
-        :raise ValueError: if the path is empty
-        :raise FileNotFoundError: if the path does not exist
+
+        Parameters
+        ----------
+        path : str
+            The path of a file or a directory.
+
+        Raises
+        ------
+        ValueError
+            If the path is empty.
+        FileNotFoundError
+            If the path does not exist.
+
         """
         if not path:
             raise ValueError('The path cannot be empty.')
@@ -74,7 +109,12 @@ class Modifier:
     def add_profile(self, profile: ModifierProfile):
         """
         Map a function to each block.
-        :param profile: the modifier profile to be added
+
+        Parameters
+        ----------
+        profile : ModifierProfile
+            The modifier profile to be added.
+
         """
         self.modifiers.append(profile)
 
@@ -100,6 +140,8 @@ class Modifier:
         modified_path = os.path.join(temp_dir, modified_name)
 
         modified_file = open(modified_path, 'w')
+
+        # TODO: Get metadata from the corresponding warehouse.
 
         # Read the file line by line, and apply the modifiers.
         with open(decompressed_path, 'r') as f:
