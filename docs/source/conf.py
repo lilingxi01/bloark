@@ -23,6 +23,8 @@ extensions = [
     'sphinx_favicon',
 ]
 
+suppress_warnings = ["myst.xref_missing", "myst.iref_ambiguous"]
+
 templates_path = ['_templates']
 exclude_patterns = ['.DS_Store']
 
