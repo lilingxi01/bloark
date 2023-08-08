@@ -7,6 +7,7 @@ import multiprocessing as mp
 from typing import List, Tuple, Optional, TextIO
 import time
 import uuid
+import bz2
 
 import xmltodict
 from py7zr import py7zr
@@ -115,12 +116,21 @@ class Builder:
         logging.debug(f'Decompressing [{archive_filename}]...')
 
         try:
-            with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
-                start_time = time.time()
-                z.extractall(path=decompressed_dir_path)
-                end_time = time.time()
-                execution_duration = (end_time - start_time) / 60
-                logging.debug(f'Decompression took {execution_duration:.2f} min. ({archive_filename})')
+            start_time = time.time()
+            if file_path.endswith('.7z'):
+                with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
+                    z.extractall(path=decompressed_dir_path)
+            elif file_path.endswith('.bz2'):
+                decompressed_filename = os.path.join(decompressed_dir_path, file_path.replace('.bz2', ''))
+                with bz2.open(file_path, 'rb') as f_in, open(decompressed_filename, 'wb') as f_out:
+                    for data in iter(lambda: f_in.read(500 * 1024), b''):  # Read in 500KB chunks once.
+                        f_out.write(data)
+            else:
+                logging.error(f'Unsupported file format: {archive_filename}')
+                return []
+            end_time = time.time()
+            execution_duration = (end_time - start_time) / 60
+            logging.debug(f'Decompression took {execution_duration:.2f} min. ({archive_filename})')
             decompressed_files = get_file_list(decompressed_dir_path)
             return decompressed_files
 
