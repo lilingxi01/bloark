@@ -36,4 +36,5 @@ examples/minimal-modifier
 
 resources/api-references
 resources/utility-functions
+resources/changelog
 ```
