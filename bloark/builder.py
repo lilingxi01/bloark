@@ -121,7 +121,7 @@ class Builder:
                 with py7zr.SevenZipFile(file_path, mode='r', mp=False) as z:
                     z.extractall(path=decompressed_dir_path)
             elif file_path.endswith('.bz2'):
-                decompressed_filename = os.path.join(decompressed_dir_path, file_path.replace('.bz2', ''))
+                decompressed_filename = os.path.join(decompressed_dir_path, file_path.replace('.bz2', '').split('/')[-1])
                 with bz2.open(file_path, 'rb') as f_in, open(decompressed_filename, 'wb') as f_out:
                     for data in iter(lambda: f_in.read(500 * 1024), b''):  # Read in 500KB chunks once.
                         f_out.write(data)
