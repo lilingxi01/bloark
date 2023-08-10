@@ -10,7 +10,7 @@ import time
 from .logger_init import _init_logger_main_process, _init_logger_sub_process, _init_logger_multiprocessing
 from .utils import get_file_list, decompress_zstd, prepare_output_dir, get_curr_version, \
     cleanup_dir, compress_zstd, COMPRESSION_EXTENSION, get_line_positions, read_line_in_file
-from .decorators import unstable
+from .decorators import unstable, deprecated
 from .warehouse import Warehouse, get_warehouse_filenames
 
 _DEFAULT_NUM_PROC = 1
@@ -278,14 +278,18 @@ class Modifier:
             logging.critical(f'Error occurred when compressing the file {warehouse_path}.')
             return None
 
+    @deprecated(version='2.1.2', message='This function name is opaque. Please use `start()` instead.')
+    def build(self):
+        self.start()
+
     @unstable(since='2.0.2', message='''
         Modifier main architecture has done the major update.
         However, we do not yet have enough proof to ensure that this method is stable enough in production.
         So, please use it with caution.
     ''')
-    def build(self):
+    def start(self):
         """
-        Build the blocks after applying the modifiers.
+        Start applying modifiers over blocks and segments.
         """
         # Log the version.
         logging.info(f'Modifier Version: {get_curr_version()}')
