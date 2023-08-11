@@ -1,6 +1,9 @@
 # Changelog
 
-# v2.1.2 (Aug 10, 2023)
+## v2.1.3 (Aug 11, 2023)
+* [Fix] Unstable warning throws error that causes the program to crash.
+
+## v2.1.2 (Aug 10, 2023)
 * [Fix] Optimize an opaque naming pattern on `bloark.Modifier` class. Now you should use `modifier.start()` to start the modification process rather than `modifier.build()`.
 
 ## v2.1.1 (Aug 7, 2023)

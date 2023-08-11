@@ -1,7 +1,22 @@
 import functools
 import inspect
 import warnings
-from unstable import unstable as _unstable_warning_decorator
+
+
+def _unstable_warning_decorator(func):
+    """
+    This is a decorator which can be used to mark functions as unstable. It will result in a warning being emitted
+    when the function is used.
+    """
+    @functools.wraps(func)
+    def new_func(*args, **kwargs):
+        warnings.simplefilter('always', Warning)  # turn off filter
+        warnings.warn("You are using an unstable module/function {}.".format(func.__name__),
+                      category=Warning,
+                      stacklevel=2)
+        warnings.simplefilter('default', Warning)  # reset filter
+        return func(*args, **kwargs)
+    return new_func
 
 
 def unstable(cls=None, since=None, message=None):
