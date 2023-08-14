@@ -32,6 +32,8 @@ class ModifierProfile(ABC):
             The JSON content to be modified.
         metadata : dict
             The metadata of the JSON content. This will be updated within one segment from the previous return value.
+        logger : logging.Logger
+            The logger that should be used if you want to print out something. Check log standards for more details.
 
         Returns
         -------
@@ -132,52 +134,67 @@ class Modifier:
                          old_warehouse_path: str,
                          old_warehouse_metadata_path: str,
                          warehouse: Warehouse) -> List[str]:
-        # Prepare the temporary directory.
-        temp_dir = os.path.join(self.output_dir, 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
+        if not os.path.exists(old_warehouse_path) or not os.path.exists(old_warehouse_metadata_path):
+            logging.critical(f'The file {old_warehouse_path} or {old_warehouse_metadata_path} does not exist.')
+            return []
 
-        # Prepare the path for temporary decompressed file.
-        original_name = os.path.split(old_warehouse_path)[1]
-        decompressed_name = original_name.replace('.zst', '')
-        decompressed_path = os.path.join(temp_dir, decompressed_name)
+        try:
+            # Prepare the temporary directory.
+            temp_dir = os.path.join(self.output_dir, 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
 
-        # Decompress the old warehouse.
-        decompress_zstd(old_warehouse_path, decompressed_path)
+            # Prepare the path for temporary decompressed file.
+            original_name = os.path.split(old_warehouse_path)[1]
+            decompressed_name = original_name.replace('.zst', '')
+            decompressed_path = os.path.join(temp_dir, decompressed_name)
 
-        # Prepare the path for the new warehouse.
-        assigned_warehouse: Optional[str] = None  # The assigned target warehouse name.
-        new_warehouse_path: Optional[str] = None  # The path of the new warehouse.
-        new_warehouse_metadata_path: Optional[str] = None  # The path of the new warehouse metadata.
-        new_warehouse_file: Optional[TextIO] = None  # Warehouse JSONL IO.
-        segment_metadata: Optional[dict] = None  # The metadata of the current segment.
+            # Decompress the old warehouse.
+            decompress_zstd(old_warehouse_path, decompressed_path)
 
-        byte_start: int = -1  # The byte start of the current article.
-        full_warehouse_paths: List[str] = []
-        metadata_line_positions = get_line_positions(old_warehouse_metadata_path)
+            # Prepare the path for the new warehouse.
+            assigned_warehouse: Optional[str] = None  # The assigned target warehouse name.
+            new_warehouse_path: Optional[str] = None  # The path of the new warehouse.
+            new_warehouse_metadata_path: Optional[str] = None  # The path of the new warehouse metadata.
+            new_warehouse_file: Optional[TextIO] = None  # Warehouse JSONL IO.
+            segment_metadata: Optional[dict] = None  # The metadata of the current segment.
+
+            byte_start: int = -1  # The byte start of the current article.
+            full_warehouse_paths: List[str] = []
+            metadata_line_positions = get_line_positions(old_warehouse_metadata_path)
+
+        except Exception as e:
+            logging.critical(f'Error occurred when preparing the modification: {e}')
+            return []
 
         def _read_next_segment():
             nonlocal segment_metadata, assigned_warehouse, new_warehouse_path, new_warehouse_metadata_path, \
-                new_warehouse_file, byte_start
+                new_warehouse_file, byte_start, old_warehouse_metadata_path
 
             if not metadata_line_positions:
                 return False
 
-            assigned_warehouse = warehouse.assign_warehouse()
-            new_warehouse_filename, new_warehouse_metadata_filename = get_warehouse_filenames(assigned_warehouse)
-            new_warehouse_path = os.path.join(self.output_dir, new_warehouse_filename)
-            new_warehouse_metadata_path = os.path.join(self.output_dir, new_warehouse_metadata_filename)
-            new_warehouse_file = open(new_warehouse_path, 'a')
+            try:
+                assigned_warehouse = warehouse.assign_warehouse()
+                new_warehouse_filename, new_warehouse_metadata_filename = get_warehouse_filenames(assigned_warehouse)
+                new_warehouse_path = os.path.join(self.output_dir, new_warehouse_filename)
+                new_warehouse_metadata_path = os.path.join(self.output_dir, new_warehouse_metadata_filename)
+                new_warehouse_file = open(new_warehouse_path, 'a')
 
-            segment_metadata = read_line_in_file(old_warehouse_metadata_path, metadata_line_positions[0])
+                segment_metadata = read_line_in_file(old_warehouse_metadata_path, metadata_line_positions[0])
+                metadata_line_positions.pop(0)  # Remove the first element to push the queue forward.
+                segment_metadata = json.loads(segment_metadata)
 
-            # Record the byte start of the article. This variable will be stored by the end of the modification.
-            byte_start = new_warehouse_file.tell()
+                # Record the byte start of the article. This variable will be stored by the end of the modification.
+                byte_start = new_warehouse_file.tell()
+
+            except Exception as e:
+                logging.error(f'Error occurred when loading metadata: {e}')
+                return False
+
+            return True
 
         def _on_segment_finished():
-            nonlocal assigned_warehouse, old_warehouse_path, old_warehouse_metadata_path, new_warehouse_file, \
-                full_warehouse_paths, segment_metadata, byte_start
-            old_warehouse_path = None
-            old_warehouse_metadata_path = None
+            nonlocal assigned_warehouse, new_warehouse_file, full_warehouse_paths, segment_metadata, byte_start
             segment_metadata = None
             byte_start = -1
             if new_warehouse_file is not None:
@@ -191,45 +208,61 @@ class Modifier:
 
         # Main modification loop for each segment.
         while _read_next_segment():
-            skip_segment = False  # Whether to skip the current segment.
+            try:
+                skip_segment = False  # Whether to skip the current segment.
 
-            old_warehouse_byte_start = segment_metadata['byte_start']
-            old_warehouse_byte_end = segment_metadata['byte_end']
+                old_warehouse_byte_start = segment_metadata['byte_start']
+                old_warehouse_byte_end = segment_metadata['byte_end']
 
-            old_warehouse_file = open(decompressed_path, 'r')
-            old_warehouse_file.seek(old_warehouse_byte_start)
+                old_warehouse_file = open(decompressed_path, 'r')
+                old_warehouse_file.seek(old_warehouse_byte_start)
 
-            while old_warehouse_file.tell() < old_warehouse_byte_end:
-                # Read the current block from the old warehouse.
-                original_block = old_warehouse_file.readline()
-                original_block = json.loads(original_block)
-                modified_block = original_block
-                for modifier in self.modifiers:
-                    modified_block, modified_segment_metadata = modifier.block(modified_block, segment_metadata)
-                    # If the segment metadata becomes None, it means that the segment should be skipped.
-                    if modified_segment_metadata is None:
-                        skip_segment = True
+                while old_warehouse_file.tell() < old_warehouse_byte_end:
+                    # Read the current block from the old warehouse.
+                    original_block = old_warehouse_file.readline()
+                    original_block = json.loads(original_block)
+                    modified_block = original_block
+                    for modifier in self.modifiers:
+                        # If the block becomes None, it means that this block should be skipped.
+                        if modified_block is None:
+                            break
+                        try:
+                            modified_block, modified_segment_metadata = modifier.block(
+                                content=modified_block,
+                                metadata=segment_metadata,
+                            )
+                        except Exception as e:
+                            logging.error(f'Error occurred within the user-defined modifier: {e}')
+                            modified_block = None
+                            break
+                        # If the segment metadata becomes None, it means that the segment should be skipped.
+                        if modified_segment_metadata is None:
+                            skip_segment = True
+                            break
+                    if skip_segment:
                         break
-                    # If the block becomes None, it means that this block should be skipped.
                     if modified_block is None:
-                        break
-                if skip_segment:
-                    break
-                if modified_block is None:
-                    continue
-                # Write the modified block to the new warehouse.
-                new_warehouse_file.write(json.dumps(modified_block) + '\n')
-                # Garbage collection to release memory.
-                del original_block
-                del modified_block
+                        continue
+                    # Write the modified block to the new warehouse.
+                    new_warehouse_file.write(json.dumps(modified_block) + '\n')
+                    # Garbage collection to release memory.
+                    del original_block
+                    del modified_block
 
-            old_warehouse_file.close()
+                old_warehouse_file.close()
+            except Exception as e:
+                logging.error(f'Error occurred when modifying the segment: {e}')
+                _on_segment_finished()
+                continue
 
-            # Finalize the segment.
-            segment_metadata['byte_start'] = byte_start
-            segment_metadata['byte_end'] = new_warehouse_file.tell()
-            with open(new_warehouse_metadata_path, 'a') as f:
-                f.write(json.dumps(segment_metadata) + '\n')
+            try:
+                # Finalize the segment.
+                segment_metadata['byte_start'] = byte_start
+                segment_metadata['byte_end'] = new_warehouse_file.tell()
+                with open(new_warehouse_metadata_path, 'a') as f:
+                    f.write(json.dumps(segment_metadata) + '\n')
+            except Exception as e:
+                logging.error(f'Error occurred when finalizing the segment: {e}')
 
             _on_segment_finished()
 
@@ -305,8 +338,8 @@ class Modifier:
         # Prepare the output directory.
         prepare_output_dir(self.output_dir)
 
-        curr_count = 0
-        total_count = len(self.files)
+        # Only count the number of zst files for total count at progress bar.
+        total_count = len(list(filter(lambda x: x.endswith('.zst'), self.files)))
 
         global_temp_dir = os.path.join(self.output_dir, 'temp')
         os.makedirs(global_temp_dir, exist_ok=True)
@@ -320,7 +353,7 @@ class Modifier:
 
         available_process_count = self.num_proc
 
-        modification_pool = Pool(
+        mp_pool = Pool(
             processes=self.num_proc,
             initializer=self._worker_initializer,
             initargs=(q,)
@@ -366,8 +399,12 @@ class Modifier:
                 zst_files.add(curr_file_path)
             elif curr_file_path.endswith('.metadata'):
                 metadata_files.add(curr_file_path)
+        zst_files = list(zst_files)
+        metadata_files = list(metadata_files)
+        logging.debug(f'zst_files: {zst_files}')
+        logging.debug(f'metadata_files: {metadata_files}')
         for curr_file_path in zst_files:
-            curr_file_basename = os.path.basename(curr_file_path)
+            curr_file_basename = os.path.basename(curr_file_path).rstrip('.jsonl.zst')
             metadata_file_path = os.path.join(os.path.dirname(curr_file_path), curr_file_basename + '.metadata')
             if metadata_file_path in metadata_files:
                 tasks.append(('modify', (curr_file_path, metadata_file_path)))
@@ -378,16 +415,16 @@ class Modifier:
                 available_process_count -= 1
                 task_type, args = tasks.pop(0)
                 if task_type == 'modify':
-                    file_path, = args
-                    modification_pool.apply_async(
+                    curr_file_path, metadata_file_path = args
+                    mp_pool.apply_async(
                         func=self._modify_executor,
-                        args=(file_path,),
+                        args=(curr_file_path, metadata_file_path, warehouse),
                         callback=partial(_success_callback, task_type),
                         error_callback=_error_callback
                     )
                 elif task_type == 'cleanup':
                     cleanup_path, = args
-                    modification_pool.apply_async(
+                    mp_pool.apply_async(
                         func=self._cleanup_executor,
                         args=(cleanup_path,),
                         callback=partial(_success_callback, task_type),
@@ -411,7 +448,7 @@ class Modifier:
                 task_type, args = tasks.pop(0)
                 if task_type == 'cleanup':
                     warehouse_filename, = args
-                    modification_pool.apply_async(
+                    mp_pool.apply_async(
                         func=self._cleanup_executor,
                         args=(warehouse_filename,),
                         callback=partial(_success_callback, task_type),
@@ -424,6 +461,9 @@ class Modifier:
                 time.sleep(0.1)
 
         logging.info(f'Cleanup loop finished.')
+
+        mp_pool.close()
+        mp_pool.join()
 
         # Clean up the global temporary directory.
         cleanup_dir(global_temp_dir)

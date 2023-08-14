@@ -13,12 +13,19 @@ import bloark
 
 # Define a modifier profile.
 class PTFModifier(bloark.ModifierProfile):
-    def block(self, data: dict, metadata: dict):
+    count: int = 0
+
+    def __init__(self):
+        self.count = 0
+
+    def block(self, content: dict, metadata: dict):
         # TODO: Modify the data and metadata here.
         #  If you want to skip this block, simply return `None, metadata`.
         #  If you want to skip the entire segment, simply return `None, None`.
         #  Check documentation of Modifier for more details.
-        return data, metadata
+        self.count += 1
+        logging.debug(f'Modifier: test printout! {self.count}')
+        return content, metadata
 
 
 # Create a modifier instance with 8 processes (CPUs) and INFO-level logging.
@@ -31,7 +38,7 @@ reader.preload('./input')
 reader.add_profile(PTFModifier())
 
 # Start modifying the warehouses (this command will take a long time).
-reader.build()
+reader.start()
 ```
 
 ## Bash script
