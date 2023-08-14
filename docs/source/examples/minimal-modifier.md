@@ -29,16 +29,16 @@ class PTFModifier(bloark.ModifierProfile):
 
 
 # Create a modifier instance with 8 processes (CPUs) and INFO-level logging.
-reader = bloark.Modifier(output_dir='./output', num_proc=8, log_level=logging.INFO)
+modifier = bloark.Modifier(output_dir='./output', num_proc=8, log_level=logging.INFO)
 
 # Preload all files from the input directory (original warehouses).
-reader.preload('./input')
+modifier.preload('./input')
 
 # Add the modifier profile to the modifier instance.
-reader.add_profile(PTFModifier())
+modifier.add_profile(PTFModifier())
 
 # Start modifying the warehouses (this command will take a long time).
-reader.start()
+modifier.start()
 ```
 
 ## Bash script
