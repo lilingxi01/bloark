@@ -30,5 +30,6 @@ def test_build_compressed_bz2():
 
     # Make sure that the `./tests/output/temp` folder is empty.
     assert not os.path.exists('./tests/output/temp') or not os.listdir('./tests/output/temp')
+    assert os.listdir('./tests/output') == ['warehouse_00000.jsonl.zst', 'warehouse_00000.metadata']
 
     shutil.rmtree('./tests/output')
