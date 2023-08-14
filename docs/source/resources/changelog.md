@@ -15,3 +15,12 @@
 
 ## v2.1.0 (Aug 7, 2023)
 * [Add] Added `.bz2` file support to builder module.
+
+## v2.0.2 (Jul 16, 2023)
+* [Fix] Some minor bugs that bother the compatibility of the Modifier module.
+
+## v2.0.1 (Jul 16, 2023)
+* [Major] Rebuild the entire `bloark.Modifier` module for better performance, stability, and flexibility.
+
+## v1.1.2 (May 23, 2023)
+* [Fix] Some potential empty directory issue.
