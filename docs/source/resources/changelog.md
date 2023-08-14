@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.0 (Aug 14, 2023)
+* [Fix] Builder module not closing pool after finishing the task.
+* [Fix] Modifier module does not push forward for some glitches after the huge update.
+
 ## v2.1.3 (Aug 11, 2023)
 * [Fix] Unstable warning throws error that causes the program to crash.
 
