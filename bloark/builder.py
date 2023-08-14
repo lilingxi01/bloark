@@ -350,7 +350,7 @@ class Builder:
 
         available_process_count = self.num_proc
 
-        modification_pool = mp.Pool(
+        mp_pool = mp.Pool(
             processes=self.num_proc,
             initializer=self._worker_initializer,
             initargs=(q,),
@@ -412,7 +412,7 @@ class Builder:
                 task_type, args = tasks.pop(0)
                 if task_type == 'decompress':
                     file_path, = args
-                    modification_pool.apply_async(
+                    mp_pool.apply_async(
                         func=self._decompress_executor,
                         args=(file_path,),
                         callback=partial(_success_callback, task_type),
@@ -420,7 +420,7 @@ class Builder:
                     )
                 elif task_type == 'process':
                     xml_file_path, = args
-                    modification_pool.apply_async(
+                    mp_pool.apply_async(
                         func=self._process_executor,
                         args=(xml_file_path, warehouse),
                         callback=partial(_success_callback, task_type),
@@ -428,7 +428,7 @@ class Builder:
                     )
                 elif task_type == 'cleanup':
                     warehouse_filename, = args
-                    modification_pool.apply_async(
+                    mp_pool.apply_async(
                         func=self._cleanup_executor,
                         args=(warehouse_filename,),
                         callback=partial(_success_callback, task_type),
@@ -456,7 +456,7 @@ class Builder:
                 task_type, args = tasks.pop(0)
                 if task_type == 'cleanup':
                     warehouse_filename, = args
-                    modification_pool.apply_async(
+                    mp_pool.apply_async(
                         func=self._cleanup_executor,
                         args=(warehouse_filename,),
                         callback=partial(_success_callback, task_type),
@@ -469,6 +469,9 @@ class Builder:
                 time.sleep(0.1)
 
         logging.info(f'Cleanup loop finished.')
+
+        mp_pool.close()
+        mp_pool.join()
 
         # Clean up the global temporary directory.
         cleanup_dir(global_temp_dir)
