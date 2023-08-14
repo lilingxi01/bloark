@@ -11,19 +11,20 @@ import logging
 import bloark
 
 
-# Create a builder instance with 8 processes and INFO-level logging.
-builder = bloark.Builder(output_dir='./output', num_proc=8, log_level=logging.INFO)
-
-# Preload all files from the input directory (original data sources).
-# This command should be instant because it only loads paths rather than files themselves.
-builder.preload('./input')
-
-# For testing purposes, we only build the first 10 files.
-# This way of modification is possible, but not recommended in production.
-builder.files = builder.files[:10]
-
-# Start building the warehouses (this command will take a long time).
-builder.build()
+if __name__ == '__main__':
+    # Create a builder instance with 8 processes and INFO-level logging.
+    builder = bloark.Builder(output_dir='./output', num_proc=8, log_level=logging.INFO)
+    
+    # Preload all files from the input directory (original data sources).
+    # This command should be instant because it only loads paths rather than files themselves.
+    builder.preload('./input')
+    
+    # For testing purposes, we only build the first 10 files.
+    # This way of modification is possible, but not recommended in production.
+    builder.files = builder.files[:10]
+    
+    # Start building the warehouses (this command will take a long time).
+    builder.build()
 ```
 
 ## Bash script

@@ -19,26 +19,24 @@ class PTFModifier(bloark.ModifierProfile):
         self.count = 0
 
     def block(self, content: dict, metadata: dict):
-        # TODO: Modify the data and metadata here.
-        #  If you want to skip this block, simply return `None, metadata`.
-        #  If you want to skip the entire segment, simply return `None, None`.
-        #  Check documentation of Modifier for more details.
         self.count += 1
         logging.debug(f'Modifier: test printout! {self.count}')
         return content, metadata
 
 
-# Create a modifier instance with 8 processes (CPUs) and INFO-level logging.
-modifier = bloark.Modifier(output_dir='./output', num_proc=8, log_level=logging.INFO)
+if __name__ == '__main__':
+    # Create a modifier instance with 8 processes (CPUs) and INFO-level logging.
+    modifier = bloark.Modifier(output_dir='./tests/output', num_proc=2, log_level=logging.INFO)
 
-# Preload all files from the input directory (original warehouses).
-modifier.preload('./input')
+    # Preload all files from the input directory (original warehouses).
+    modifier.preload('./tests/sample_data/sample_warehouses')
 
-# Add the modifier profile to the modifier instance.
-modifier.add_profile(PTFModifier())
+    # Add the modifier profile to the modifier instance.
+    modifier.add_profile(PTFModifier())
 
-# Start modifying the warehouses (this command will take a long time).
-modifier.start()
+    # Start modifying the warehouses (this command will take a long time).
+    modifier.start()
+
 ```
 
 ## Bash script
