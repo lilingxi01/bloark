@@ -1,5 +1,8 @@
 # Changelog
 
+## v2.3.0 (Aug 20, 2023)
+* [Add] Mark `bloark.Modifier.start()` function as stable (removed unstable decorator). Add notes to the deprecated `bloark.Modifier.build()` function that it will be removed from the next minor release (v2.4).
+
 ## v2.2.0 (Aug 14, 2023)
 * [Fix] Builder module not closing pool after finishing the task.
 * [Fix] Modifier module does not push forward for some glitches after the huge update.
