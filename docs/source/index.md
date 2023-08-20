@@ -20,6 +20,7 @@ cluster-requirements
 :maxdepth: 3
 
 architecture/definitions
+architecture/metadata
 ```
 
 ```{toctree}
