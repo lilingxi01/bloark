@@ -26,7 +26,10 @@ def get_curr_version():
         return "Package not found"
 
 
-def get_file_list(input_path: str) -> List[str]:
+compression_file_extensions = ['.zst', '.7z', '.bz2']
+
+
+def get_file_list(input_path: str, extensions: List[str] = None) -> List[str]:
     """
     Get the list of files in the input directory.
 
@@ -34,6 +37,8 @@ def get_file_list(input_path: str) -> List[str]:
     ----------
     input_path : str
         The input directory.
+    extensions : List[str]
+        The list of extensions to consider.
 
     Raises
     ------
@@ -63,8 +68,15 @@ def get_file_list(input_path: str) -> List[str]:
             file_path = os.path.join(root, file)
             all_files.append(file_path)
 
+    # Make sure we only load designated files into our stack.
+    # We don't want to load any other files such as metadata at this stage.
+    def endswith_extensions(candidate_path: str) -> bool:
+        if not extensions:
+            return True
+        return any([candidate_path.endswith(ext) for ext in extensions])
+
     # Remove duplicate files. Sort them for determinism.
-    all_files = sorted(list(set(all_files)))
+    all_files = sorted([i for i in list(set(all_files)) if endswith_extensions(i)])
     return all_files
 
 

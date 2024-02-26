@@ -22,8 +22,10 @@ class PTFModifier(bloark.ModifierProfile):
 
 
 def test_minimal_modification_process():
-    modifier = bloark.Modifier(output_dir='./tests/output', num_proc=2, log_level=logging.INFO)
+    modifier = bloark.Modifier(output_dir='./tests/output', num_proc=2, log_level=logging.DEBUG)
     modifier.preload('./tests/sample_data/sample_warehouses')
+
+    print('files:', modifier.files)
 
     expected_files = map(lambda x: os.path.basename(x), modifier.files)
 
@@ -34,4 +36,4 @@ def test_minimal_modification_process():
     processed_files = os.listdir('./tests/output')
     assert set(processed_files) == set(expected_files)
 
-    shutil.rmtree('./tests/output')
+    # shutil.rmtree('./tests/output')

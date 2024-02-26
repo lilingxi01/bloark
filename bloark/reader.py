@@ -16,6 +16,13 @@ from .utils import get_file_list, prepare_output_dir, get_curr_version, cleanup_
 _DEFAULT_NUM_PROC = 1
 _DEFAULT_LOG_LEVEL = logging.INFO
 
+_IGNORED_READER_FILES = [
+    '.DS_Store',
+    '.gitignore',
+    '.gitattributes',
+    '.env',
+]
+
 
 class Reader:
     """
@@ -179,6 +186,11 @@ class Reader:
 
         # Built-up initial tasks.
         for curr_file_path in self.files:
+            if curr_file_path.endswith('.metadata') or os.path.basename(curr_file_path) in _IGNORED_READER_FILES:
+                continue
+            if not curr_file_path.endswith('.zst'):
+                logging.warning(f'Unsupported file format: {curr_file_path}')
+                continue
             tasks.append(('decompress', (curr_file_path,)))
 
         # Main semaphore loop.
@@ -228,8 +240,9 @@ class Reader:
             return None, None
 
         # Randomly select a file.
-        picked_index = int(uuid.uuid4().int % len(self.files))
-        glimpse_path = self.files[picked_index]
+        warehouse_files = [f for f in self.files if f.endswith('.zst')]
+        picked_index = int(uuid.uuid4().int % len(warehouse_files))
+        glimpse_path = warehouse_files[picked_index]
 
         logging.info(f'Randomly chosen file: {glimpse_path}')
 

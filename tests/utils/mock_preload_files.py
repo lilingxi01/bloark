@@ -24,7 +24,7 @@ def create_testing_dir():
     files = []
     # Create some files directly in the testing_dir directory
     for i in range(3):
-        filename = f"file_{i}.txt"
+        filename = f"file_{i}.7z"
         filepath = os.path.join(testing_dir_path, filename)
         files.append(filepath)
         with open(filepath, "w") as f:
@@ -37,7 +37,7 @@ def create_testing_dir():
         os.mkdir(folder_path)
 
         for j in range(2):
-            filename = "".join(random.choice(string.ascii_letters) for _ in range(10)) + ".txt"
+            filename = "".join(random.choice(string.ascii_letters) for _ in range(10)) + ".7z"
             filepath = os.path.join(folder_path, filename)
             with open(filepath, "w") as f:
                 f.write("Hello, world!")
