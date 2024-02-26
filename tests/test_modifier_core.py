@@ -36,4 +36,4 @@ def test_minimal_modification_process():
     processed_files = os.listdir('./tests/output')
     assert set(processed_files) == set(expected_files)
 
-    # shutil.rmtree('./tests/output')
+    shutil.rmtree('./tests/output')

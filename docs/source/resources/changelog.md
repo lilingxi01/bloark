@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.1 (Feb 26, 2024)
+* [Fix] Resolve an issue where preloading path might include unwanted files such as `.DS_Store` on macOS, `.env`, etc.
+* [Fix] Resolve an issue that reader crashes when processing metadata files or unwanted non-warehouse files.
+
 ## v2.3.0 (Aug 20, 2023)
 * [Add] Mark `bloark.Modifier.start()` function as stable (removed unstable decorator). Add notes to the deprecated `bloark.Modifier.build()` function that it will be removed from the next minor release (v2.4).
 

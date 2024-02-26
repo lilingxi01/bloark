@@ -26,9 +26,6 @@ def get_curr_version():
         return "Package not found"
 
 
-compression_file_extensions = ['.zst', '.7z', '.bz2']
-
-
 def get_file_list(input_path: str, extensions: List[str] = None) -> List[str]:
     """
     Get the list of files in the input directory.
