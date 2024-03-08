@@ -5,6 +5,7 @@ import os
 import py7zr
 from multiprocessing import Pool
 
+from .utils import get_mock_zst_temporary_dir
 from .utils.mock_zst_files import get_mock_zst_filenames
 from .utils.mock_preload_files import create_testing_dir, delete_testing_dir
 from .utils.mock_7z_files import get_mock_7z_filenames, get_mock_multiple_article_7z_filename
@@ -59,5 +60,8 @@ def generate_mock_zst_files():
         if os.path.exists(file_name):
             continue
         shutil.copyfile(original_file, file_name)
+
+    with open(os.path.join(get_mock_zst_temporary_dir(), 'block_00000000.metadata'), 'w') as f:
+        f.write('{"title": "test"}')
 
     yield

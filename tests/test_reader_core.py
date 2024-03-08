@@ -14,6 +14,8 @@ def test_reader_decompress():
     reader = bloark.Reader(num_proc=4, output_dir='./tests/output', log_level=logging.DEBUG)
     reader.preload(temporary_dir)
 
+    print(reader.files)
+
     reader.decompress()
 
     # Test that the decompressed files exist.

@@ -109,7 +109,7 @@ class Modifier:
             raise ValueError('The path cannot be empty.')
         if not os.path.exists(path):
             raise FileNotFoundError('The path does not exist.')
-        self.files.extend(get_file_list(path))
+        self.files.extend(get_file_list(path, ['.zst', '.metadata']))
 
     def add_profile(self, profile: ModifierProfile):
         """
@@ -136,6 +136,10 @@ class Modifier:
                          warehouse: Warehouse) -> List[str]:
         if not os.path.exists(old_warehouse_path) or not os.path.exists(old_warehouse_metadata_path):
             logging.critical(f'The file {old_warehouse_path} or {old_warehouse_metadata_path} does not exist.')
+            return []
+
+        if old_warehouse_path.endswith('.metadata'):
+            logging.critical(f'The warehouse file {old_warehouse_path} should not be a metadata file.')
             return []
 
         try:

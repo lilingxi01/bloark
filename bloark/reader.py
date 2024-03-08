@@ -86,7 +86,7 @@ class Reader:
             raise ValueError('The path cannot be empty.')
         if not os.path.exists(path):
             raise FileNotFoundError('The path does not exist.')
-        self.files.extend(get_file_list(path))
+        self.files.extend(get_file_list(path, ['.zst', '.7z']))
 
     def _worker_initializer(self, q):
         """
